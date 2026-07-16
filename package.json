@@ -1,0 +1,53 @@
+{
+  "name": "edubite",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "dev:webpack": "next dev",
+    "dev:turbo": "next dev --turbopack",
+    "dev:kill": "node scripts/kill-dev-ports.mjs",
+    "dev:clean": "node scripts/dev-clean.mjs && next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test:persistence": "node scripts/persistence-smoke.mjs",
+    "test:content": "node scripts/content-smoke.mjs",
+    "seed:pledges": "node scripts/seed-edubite-pledges.mjs",
+    "seed:pledges:am": "node scripts/seed-edubite-pledges.mjs am",
+    "seed:pledges:pm": "node scripts/seed-edubite-pledges.mjs pm",
+    "seed:inspiration": "node scripts/seed-edubite-inspiration.mjs",
+    "import:pcm-daily-dose": "node scripts/import-cbse-pcm-daily-dose.mjs",
+    "import:funbrain": "node scripts/import-funbrain.mjs"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.110.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.23.12",
+    "lucide-react": "^0.525.0",
+    "next": "^15.4.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "three": "^0.185.1",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@tailwindcss/postcss": "^4.1.11",
+    "@types/node": "^20.19.9",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@types/three": "^0.185.1",
+    "eslint": "^9.31.0",
+    "eslint-config-next": "^15.4.1",
+    "tailwindcss": "^4.1.11",
+    "typescript": "^5.8.3"
+  }
+}
