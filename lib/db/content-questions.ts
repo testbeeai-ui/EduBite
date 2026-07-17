@@ -1,3 +1,4 @@
+import { stripFunBrainBankLabel } from "@/lib/content/schedule";
 import { createEdubiteSupabaseServer } from "@/lib/supabase/server";
 import type { Question } from "@/lib/types";
 import type {
@@ -151,7 +152,10 @@ export function contentRowsToQuestions(
 ): Question[] {
   return rows.map((row) => ({
     tag: row.tag ?? "",
-    q: row.q,
+    q:
+      row.domain === "funbrain"
+        ? stripFunBrainBankLabel(row.q)
+        : row.q,
     opts: row.opts,
     correct: row.correct,
   }));

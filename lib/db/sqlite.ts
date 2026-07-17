@@ -368,15 +368,33 @@ export function writeNormalizedGameState(
             incoming.funbrain.highScore,
             existing.funbrain.highScore,
           ),
+          completed:
+            incoming.lastActiveDate === existing.lastActiveDate
+              ? incoming.funbrain.completed || existing.funbrain.completed
+              : incoming.funbrain.completed,
+          finished:
+            incoming.lastActiveDate === existing.lastActiveDate
+              ? incoming.funbrain.finished ||
+                existing.funbrain.finished ||
+                incoming.funbrain.completed ||
+                existing.funbrain.completed
+              : incoming.funbrain.finished || incoming.funbrain.completed,
+          score:
+            incoming.lastActiveDate === existing.lastActiveDate
+              ? Math.max(incoming.funbrain.score, existing.funbrain.score)
+              : incoming.funbrain.score,
         },
         doseRdmCredited: Math.max(
           incoming.doseRdmCredited,
           existing.doseRdmCredited,
         ),
-        funbrainRdmCredited: Math.max(
-          incoming.funbrainRdmCredited,
-          existing.funbrainRdmCredited,
-        ),
+        funbrainRdmCredited:
+          incoming.lastActiveDate === existing.lastActiveDate
+            ? Math.max(
+                incoming.funbrainRdmCredited,
+                existing.funbrainRdmCredited,
+              )
+            : incoming.funbrainRdmCredited,
       };
     } catch {
       normalized = incoming;

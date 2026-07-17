@@ -9,9 +9,6 @@ import {
   readNormalizedBrainGym,
   writeNormalizedBrainGym,
 } from "@/lib/db/supabase-progress";
-import {
-  readNormalizedBrainGym as readSqliteBrainGym,
-} from "@/lib/db/sqlite";
 import type { BrainGymProgress } from "@/lib/brain-gym/types";
 
 export const runtime = "nodejs";
@@ -23,17 +20,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    let progress = await readNormalizedBrainGym(user.id);
-    if (!progress) {
-      try {
-        const legacy = readSqliteBrainGym(user.id);
-        if (legacy) {
-          progress = await writeNormalizedBrainGym(user.id, legacy);
-        }
-      } catch {
-        // ignore sqlite migrate failures
-      }
-    }
+    const progress = await readNormalizedBrainGym(user.id);
     return NextResponse.json({
       progress,
       store: "edubite_brain_gym_progress",

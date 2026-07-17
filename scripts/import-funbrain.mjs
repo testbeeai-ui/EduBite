@@ -55,6 +55,12 @@ function addDays(dateKey, offset) {
   return `${y}-${m}-${day}`;
 }
 
+function stripBankLabel(prompt) {
+  return String(prompt)
+    .replace(/^[A-Za-z]+(?:\s+[A-Za-z]+)*\s+\d+:\s*/, "")
+    .trim();
+}
+
 function validateQuestion(q, index) {
   if (!q || typeof q.q !== "string" || !q.q.trim()) {
     throw new Error(`FunBrain question ${index}: missing q`);
@@ -93,7 +99,7 @@ function buildRows(questions) {
       class_level: null,
       active_date: addDays(CYCLE_START, dayIndex),
       tag: null,
-      q: questions[i].q.trim(),
+      q: stripBankLabel(questions[i].q),
       opts: questions[i].opts.map((o) => String(o).trim()),
       correct: questions[i].correct,
       sort_order: i % PER_DAY,

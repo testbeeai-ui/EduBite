@@ -5,16 +5,22 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ViewHeader } from "@/components/ui/modal";
+import { EDUBLAST_URL } from "@/data/config";
+import {
+  FUNBRAIN_QUESTIONS_PER_DAY,
+} from "@/lib/content/schedule";
 import { useTodayContent } from "@/lib/content/use-today-content";
 import { useGame } from "@/lib/store/game-provider";
 import { cn } from "@/lib/utils";
 
 export function FunBrainView() {
-  const { state, startFunbrain, answerFunbrain, resetFunbrain } = useGame();
+  const { state, startFunbrain, answerFunbrain } = useGame();
   const content = useTodayContent();
-  const pool = content.funbrain;
+  // Today's fixed set only (6 Q) — never the full 1080 bank in a loop.
+  const pool = content.funbrain.slice(0, FUNBRAIN_QUESTIONS_PER_DAY);
   const [selected, setSelected] = useState<number | null>(null);
   const fb = state.funbrain;
+  const doneForToday = fb.completed || fb.finished;
 
   if (content.loading) {
     return (
@@ -22,7 +28,7 @@ export function FunBrainView() {
         <ViewHeader
           eyebrow="Function 02"
           title="FunBrain"
-          subtitle="60-second rapid-fire rounds with combos — the dopamine layer that makes revision feel like a game."
+          subtitle="60-second daily sprint — six questions, one pass."
         />
         <Card className="text-center py-10 text-sm text-[var(--text-dim)]">
           Loading today&apos;s sprint…
@@ -31,33 +37,7 @@ export function FunBrainView() {
     );
   }
 
-  if (!fb.running && !fb.finished) {
-    return (
-      <div>
-        <ViewHeader
-          eyebrow="Function 02"
-          title="FunBrain"
-          subtitle='60-second rapid-fire rounds with combos — the dopamine layer that makes revision feel like a game.'
-        />
-        <Card className="text-center py-[50px] px-5">
-          <h2 className="font-display font-bold text-[22px]">60-second sprint</h2>
-          <p className="text-[var(--text-dim)] text-sm mt-3 max-w-md mx-auto leading-relaxed">
-            Answer as many as you can before the clock hits zero. Combos multiply your RDM.
-          </p>
-          {fb.highScore > 0 && (
-            <p className="font-mono text-xs text-amber mt-4">
-              Personal best: {fb.highScore} pts
-            </p>
-          )}
-          <Button className="mt-8" onClick={startFunbrain} disabled={pool.length === 0}>
-            Start sprint →
-          </Button>
-        </Card>
-      </div>
-    );
-  }
-
-  if (fb.finished) {
+  if (doneForToday && !fb.running) {
     return (
       <div>
         <ViewHeader
@@ -65,23 +45,67 @@ export function FunBrainView() {
           title="FunBrain"
           subtitle="Sprint complete — RDM added to your balance."
         />
-        <Card className="text-center py-10">
+        <Card className="text-center py-10 px-5">
           <div className="font-display font-extrabold text-3xl text-teal">
             Score: {fb.score}
           </div>
           <p className="text-[var(--text-dim)] text-sm mt-2">
-            {fb.score >= 100 ? "High scorer territory!" : "Beat your score next round."}
-            {" "}RDM is credited up to your best FunBrain score today.
+            One FunBrain sprint per day. Come back tomorrow for the next set.
           </p>
-          <Button className="mt-6" onClick={() => { resetFunbrain(); setSelected(null); }}>
-            Play again →
+          <p className="text-[var(--text-dim)] mt-5 text-sm leading-relaxed max-w-md mx-auto">
+            For more practice, go to{" "}
+            <a
+              href={EDUBLAST_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-teal font-semibold hover:underline"
+            >
+              edublast.in
+            </a>
+            .
+          </p>
+          <Button
+            className="mt-4"
+            onClick={() =>
+              window.open(EDUBLAST_URL, "_blank", "noopener,noreferrer")
+            }
+          >
+            Continue on edublast.in →
           </Button>
         </Card>
       </div>
     );
   }
 
-  const q = pool[fb.currentQuestionIndex % Math.max(pool.length, 1)];
+  if (!fb.running && !doneForToday) {
+    return (
+      <div>
+        <ViewHeader
+          eyebrow="Function 02"
+          title="FunBrain"
+          subtitle="60-second rapid-fire rounds with combos — the dopamine layer that makes revision feel like a game."
+        />
+        <Card className="text-center py-[50px] px-5">
+          <h2 className="font-display font-bold text-[22px]">60-second sprint</h2>
+          {fb.highScore > 0 && (
+            <p className="font-mono text-xs text-amber mt-4">
+              Personal best: {fb.highScore} pts
+            </p>
+          )}
+          <Button
+            className="mt-8"
+            onClick={startFunbrain}
+            disabled={pool.length < FUNBRAIN_QUESTIONS_PER_DAY}
+          >
+            Start sprint →
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  const qIndex = fb.currentQuestionIndex;
+  const q = pool[qIndex];
   if (!q) {
     return (
       <div>
@@ -101,9 +125,12 @@ export function FunBrainView() {
         subtitle="60-second sprint in progress"
       />
       <Card>
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center gap-3 flex-wrap">
           <div className="font-mono text-[13px] text-amber">
             Score: {fb.score} {fb.combo > 1 && `· ${fb.combo}x combo`}
+          </div>
+          <div className="font-mono text-[11px] text-[var(--text-dim)]">
+            {qIndex + 1}/{FUNBRAIN_QUESTIONS_PER_DAY}
           </div>
           <motion.div
             key={fb.timeLeft}
@@ -120,7 +147,7 @@ export function FunBrainView() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {q.opts.map((opt, i) => (
             <button
-              key={`${opt}-${i}`}
+              key={`${qIndex}-${opt}-${i}`}
               type="button"
               onClick={() => {
                 setSelected(i);

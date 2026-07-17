@@ -12,8 +12,8 @@ import {
   type ReactNode,
 } from "react";
 import { DOSE_QUESTION_COUNT, FEATURES, FUNBRAIN_DURATION_SEC } from "@/data/config";
-import { FUNBRAIN_POOL } from "@/data/questions";
 import { HABIT_DEFINITIONS } from "@/data/habits";
+import { FUNBRAIN_QUESTIONS_PER_DAY } from "@/lib/content/schedule";
 import {
   computeStreak,
   createInitialState,
@@ -110,6 +110,7 @@ function rollDayIfNeeded(state: GameState): GameState {
       highScore: state.funbrain.highScore,
       currentQuestionIndex: 0,
       finished: false,
+      completed: false,
     },
     habits: state.habits.map((h) => ({ ...h, done: false })),
     notifications: state.notifications,
@@ -270,6 +271,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
     case "START_FUNBRAIN":
+      if (state.funbrain.completed) return state;
       return {
         ...state,
         funbrain: {
@@ -280,6 +282,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           highScore: state.funbrain.highScore,
           currentQuestionIndex: 0,
           finished: false,
+          completed: false,
         },
       };
     case "TICK_FUNBRAIN": {
@@ -300,6 +303,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             running: false,
             timeLeft: 0,
             finished: true,
+            completed: true,
             highScore,
           },
         });
@@ -319,9 +323,30 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const poolLength =
         action.payload.poolLength && action.payload.poolLength > 0
           ? action.payload.poolLength
-          : FUNBRAIN_POOL.length;
-      const nextQ =
-        (state.funbrain.currentQuestionIndex + 1) % poolLength;
+          : FUNBRAIN_QUESTIONS_PER_DAY;
+      const nextQ = state.funbrain.currentQuestionIndex + 1;
+
+      // One pass through today's 6 only — no looping the full bank.
+      if (nextQ >= poolLength) {
+        const highScore = Math.max(state.funbrain.highScore, score);
+        const rdmDelta = Math.max(0, score - state.funbrainRdmCredited);
+        return withDerived({
+          ...state,
+          rdm: state.rdm + rdmDelta,
+          funbrainRdmCredited: state.funbrainRdmCredited + rdmDelta,
+          funbrain: {
+            ...state.funbrain,
+            score,
+            combo,
+            currentQuestionIndex: poolLength,
+            running: false,
+            finished: true,
+            completed: true,
+            highScore,
+          },
+        });
+      }
+
       return {
         ...state,
         funbrain: {
@@ -333,6 +358,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
     case "END_FUNBRAIN": {
+      if (state.funbrain.completed && !state.funbrain.running) return state;
       const highScore = Math.max(state.funbrain.highScore, state.funbrain.score);
       const rdmDelta = Math.max(
         0,
@@ -346,11 +372,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.funbrain,
           running: false,
           finished: true,
+          completed: true,
           highScore,
         },
       });
     }
     case "RESET_FUNBRAIN":
+      // One sprint per day — never clear completion mid-day.
+      if (state.funbrain.completed) return state;
       return {
         ...state,
         funbrain: {
@@ -361,6 +390,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           highScore: state.funbrain.highScore,
           currentQuestionIndex: 0,
           finished: false,
+          completed: false,
         },
       };
     case "TICK_GYAN":

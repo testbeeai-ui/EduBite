@@ -8,7 +8,6 @@ import {
   readNormalizedPuzzleProgress,
   writeNormalizedPuzzleProgress,
 } from "@/lib/db/supabase-progress";
-import { readNormalizedPuzzleProgress as readSqlitePuzzle } from "@/lib/db/sqlite";
 import type { PuzzleProgress } from "@/lib/puzzles/types";
 
 export const runtime = "nodejs";
@@ -20,17 +19,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    let progress = await readNormalizedPuzzleProgress(user.id);
-    if (!progress) {
-      try {
-        const legacy = readSqlitePuzzle(user.id);
-        if (legacy) {
-          progress = await writeNormalizedPuzzleProgress(user.id, legacy);
-        }
-      } catch {
-        // ignore
-      }
-    }
+    const progress = await readNormalizedPuzzleProgress(user.id);
     return NextResponse.json({
       progress,
       store: "edubite_puzzle_progress",

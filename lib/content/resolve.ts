@@ -11,6 +11,7 @@ import type { ContentDomain, DoseClassLevel } from "@/lib/content/types";
 import {
   dailyDoseScheduleDateFor,
   funBrainScheduleDateFor,
+  stripFunBrainBankLabel,
 } from "@/lib/content/schedule";
 import type { Question } from "@/lib/types";
 
@@ -32,7 +33,11 @@ function staticForDailyDose(classLevel: DoseClassLevel): Question[] {
 }
 
 function staticForFunBrain(): Question[] {
-  return FUNBRAIN_POOL.map((q) => ({ ...q, tag: "" }));
+  return FUNBRAIN_POOL.map((q) => ({
+    ...q,
+    tag: "",
+    q: stripFunBrainBankLabel(q.q),
+  }));
 }
 
 export async function resolveDailyDoseForClass(

@@ -53,6 +53,7 @@ export function createInitialState(): GameState {
       highScore: 0,
       currentQuestionIndex: 0,
       finished: false,
+      completed: false,
     },
     gyanUnlockedIds: ["velocity-vs-speed"],
     notifications: [

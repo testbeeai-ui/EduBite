@@ -55,15 +55,31 @@ export async function writeNormalizedGameState(
             incoming.funbrain.highScore,
             prev.funbrain.highScore,
           ),
+          // Same calendar day only — don't revive yesterday's completion after day roll.
+          completed:
+            incoming.lastActiveDate === prev.lastActiveDate
+              ? incoming.funbrain.completed || prev.funbrain.completed
+              : incoming.funbrain.completed,
+          finished:
+            incoming.lastActiveDate === prev.lastActiveDate
+              ? incoming.funbrain.finished ||
+                prev.funbrain.finished ||
+                incoming.funbrain.completed ||
+                prev.funbrain.completed
+              : incoming.funbrain.finished || incoming.funbrain.completed,
+          score:
+            incoming.lastActiveDate === prev.lastActiveDate
+              ? Math.max(incoming.funbrain.score, prev.funbrain.score)
+              : incoming.funbrain.score,
         },
         doseRdmCredited: Math.max(
           incoming.doseRdmCredited,
           prev.doseRdmCredited,
         ),
-        funbrainRdmCredited: Math.max(
-          incoming.funbrainRdmCredited,
-          prev.funbrainRdmCredited,
-        ),
+        funbrainRdmCredited:
+          incoming.lastActiveDate === prev.lastActiveDate
+            ? Math.max(incoming.funbrainRdmCredited, prev.funbrainRdmCredited)
+            : incoming.funbrainRdmCredited,
       };
     } catch {
       normalized = incoming;
@@ -195,18 +211,10 @@ export async function applyBrainGymSession(
   };
 }
 
-/** One-time lift from local SQLite if Supabase row missing. */
+/** @deprecated Local SQLite migrate removed — progress is Supabase-only. */
 export async function migrateGameStateFromSqliteIfNeeded(
   userId: string,
-  sqliteReader: () => GameState | null,
+  _sqliteReader: () => GameState | null,
 ): Promise<GameState | null> {
-  const existing = await readNormalizedGameState(userId);
-  if (existing) return existing;
-  try {
-    const legacy = sqliteReader();
-    if (!legacy) return null;
-    return writeNormalizedGameState(userId, legacy);
-  } catch {
-    return null;
-  }
+  return readNormalizedGameState(userId);
 }

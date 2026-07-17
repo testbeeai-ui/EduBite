@@ -6,8 +6,17 @@ import {
   DAILY_DOSE_QUESTIONS_12,
   FUNBRAIN_POOL,
 } from "@/data/questions";
+import { FUNBRAIN_QUESTIONS_PER_DAY, stripFunBrainBankLabel } from "@/lib/content/schedule";
 import type { Question } from "@/lib/types";
 import { todayKey } from "@/lib/utils";
+
+function mapStaticFunBrain(): Question[] {
+  return FUNBRAIN_POOL.map((q) => ({
+    ...q,
+    tag: "",
+    q: stripFunBrainBankLabel(q.q),
+  })).slice(0, FUNBRAIN_QUESTIONS_PER_DAY);
+}
 
 export type TodayContent = {
   dateKey: string;
@@ -64,8 +73,8 @@ async function fetchTodayContent(): Promise<TodayContent> {
           : DAILY_DOSE_QUESTIONS_12,
       funbrain:
         data.funbrain.questions.length > 0
-          ? data.funbrain.questions
-          : FUNBRAIN_POOL.map((q) => ({ ...q, tag: "" })),
+          ? data.funbrain.questions.slice(0, FUNBRAIN_QUESTIONS_PER_DAY)
+          : mapStaticFunBrain(),
       doseSource11: data.dailydose11.source,
       doseSource12: data.dailydose12.source,
       funbrainSource: data.funbrain.source,
@@ -77,7 +86,7 @@ async function fetchTodayContent(): Promise<TodayContent> {
       scheduleDate: todayKey(),
       dailydose11: DAILY_DOSE_QUESTIONS_11,
       dailydose12: DAILY_DOSE_QUESTIONS_12,
-      funbrain: FUNBRAIN_POOL.map((q) => ({ ...q, tag: "" })),
+      funbrain: mapStaticFunBrain(),
       doseSource11: "static",
       doseSource12: "static",
       funbrainSource: "static",

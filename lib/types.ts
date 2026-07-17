@@ -86,7 +86,10 @@ export interface FunBrainState {
   combo: number;
   highScore: number;
   currentQuestionIndex: number;
+  /** Session just ended (same as completed for UI). */
   finished: boolean;
+  /** One sprint per day — blocks replay until day roll. */
+  completed: boolean;
 }
 
 export interface GameState {

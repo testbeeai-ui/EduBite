@@ -169,16 +169,21 @@ function normalizeFunbrain(raw: unknown): FunBrainState {
       highScore: 0,
       currentQuestionIndex: 0,
       finished: false,
+      completed: false,
     };
   }
+  const completed =
+    asBoolean(raw.completed, false) || asBoolean(raw.finished, false);
+  const score = Math.max(0, Math.floor(asNumber(raw.score, 0)));
   return {
     running: false,
     timeLeft: FUNBRAIN_DURATION_SEC,
-    score: 0,
+    score: completed ? score : 0,
     combo: 0,
     highScore: Math.max(0, Math.floor(asNumber(raw.highScore, 0))),
     currentQuestionIndex: 0,
-    finished: false,
+    finished: completed,
+    completed,
   };
 }
 
@@ -221,7 +226,19 @@ export function normalizeGameState(raw: unknown): GameState {
   if (looksLikeLegacyScoreOnly) return base;
   const dose = normalizeDose(raw.dose);
   const defaultDoseCredit = dose.completed ? dose.correct * RDM_PER_DOSE_CORRECT : 0;
-  const funbrain = normalizeFunbrain(raw.funbrain);
+  let funbrain = normalizeFunbrain(raw.funbrain);
+  const funbrainRdmCredited = Math.max(
+    0,
+    Math.floor(asNumber(raw.funbrainRdmCredited, 0)),
+  );
+  // Already credited today ⇒ treat as done (legacy blobs had no `completed` flag).
+  if (funbrainRdmCredited > 0 && !funbrain.completed) {
+    funbrain = {
+      ...funbrain,
+      completed: true,
+      finished: true,
+    };
+  }
 
   return {
     rdm: Math.max(0, Math.floor(asNumber(raw.rdm, 0))),
@@ -246,10 +263,7 @@ export function normalizeGameState(raw: unknown): GameState {
       0,
       Math.floor(asNumber(raw.doseRdmCredited, defaultDoseCredit)),
     ),
-    funbrainRdmCredited: Math.max(
-      0,
-      Math.floor(asNumber(raw.funbrainRdmCredited, 0)),
-    ),
+    funbrainRdmCredited,
   };
 }
 

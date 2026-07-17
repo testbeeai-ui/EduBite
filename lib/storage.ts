@@ -27,10 +27,7 @@ function clearScopedLegacyLocal(userId: string): void {
   localStorage.removeItem(legacyScopedKey(userId));
 }
 
-/**
- * Guests: no persistence.
- * Signed-in: Supabase via /api/progress/game (with one-time SQLite migrate).
- */
+/** Guests: no persistence. Signed-in: Supabase via /api/progress/game. */
 export async function loadGameState(
   userId: string | null,
 ): Promise<GameState | null> {

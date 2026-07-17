@@ -1,171 +1,119 @@
-# Edubite — Investor Demo Frontend
+# EduBite
 
-Production-grade demo for **Edubite**: daily learning habits, gamification (RDM, levels, streaks), wellbeing habits, and AI integrity pledges. Built from the reference HTML design with a fresh-start experience (zero progress on first load).
+Daily learning companion for Class 11 & 12 students — DailyDose, FunBrain, Brain Gym, habits, streaks, and AI integrity pledges.
+
+Same Google account as [Edublast](https://www.edublast.in). Progress and content live in **Edubite-only** Supabase tables (`edubite_*`) — never mixed with Edublast `play_questions`.
+
+Repo: [testbeeai-ui/EduBite](https://github.com/testbeeai-ui/EduBite)
 
 ## Quick start
 
+**Requirements:** Node.js **≥ 22.5**
+
 ```bash
-cd Edubite
 npm install
+cp .env.example .env   # fill Supabase URL + anon key (same Auth project as Edublast)
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Production build:
+```bash
+npm run build && npm start   # production
+npm run dev:clean            # kill ports + clear .next, then dev
+```
+
+## Features
+
+| Section | What it does |
+|---------|----------------|
+| **Home** | Dashboard, streak meter, habits snapshot, Edublast CTA |
+| **DailyDose** | 5 PCM MCQs/day — Class 11 & 12 separate tracks (+45 RDM each correct) |
+| **FunBrain** | 60s sprint — **6 questions once** (2 easy–medium, 2 medium, 2 tougher) |
+| **Brain Gym** | Mini-games hub (memory, logic, speed, visual) |
+| **Puzzles** | One Class XI/XII puzzle per day |
+| **Habits** | Daily wellbeing checklist |
+| **AI pledges** | AM/PM pledges + 60s integrity reels |
+| **Achievements / Inspiration** | Badges, quotes, role models |
+| **Admin** (`/admin`) | Read-only schedule view for DailyDose & FunBrain |
+
+Guest users can browse **Home**. Other sections require Google sign-in; after login you continue to the same destination.
+
+## Content banks (Supabase)
+
+| Domain | Count | Schedule | Table |
+|--------|------:|----------|--------|
+| DailyDose Class 11 | 900 | 5/day × 180 days | `edubite_content_questions` (`class_level = '11'`) |
+| DailyDose Class 12 | 900 | 5/day × 180 days | `edubite_content_questions` (`class_level = '12'`) |
+| FunBrain | 1080 | 6/day × 180 days | `edubite_content_questions` (`domain = 'funbrain'`) |
+
+Cycle start: `2026-01-01`. Classes are **never merged**. All question content is **Supabase-only** (no SQLite for banks).
+
+### Re-import
+
+Needs `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (from Edublast `Web/.env` or local env).
 
 ```bash
-npm run build
-npm start
+npm run import:pcm-daily-dose   # Class 11 + 12 PCM banks
+npm run import:funbrain         # 1080FunBrain_questions.txt
+npm run seed:pledges:am
+npm run seed:pledges:pm
+npm run seed:inspiration
 ```
+
+## Auth & per-user data
+
+- **Auth:** Supabase Google OAuth (cookie session + middleware refresh)
+- **Each user** has a unique `user_id`; progress is keyed by that id:
+  - `edubite_game_state`
+  - `edubite_brain_gym_progress`
+  - `edubite_puzzle_progress`
+  - `edubite_reward_claims`
+- Question banks are shared; scores/streaks/habits are private per account
+- Progress APIs read/write **Supabase only** (legacy local SQLite migrate removed)
+
+## Environment
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+# Optional:
+# EDUBITE_ADMIN_EMAILS=mailidpwd@gmail.com,alexis36sg@gmail.com
+# SUPABASE_SERVICE_ROLE_KEY=   # import / seed scripts only
+```
+
+`.env` is gitignored — never commit secrets.
 
 ## Stack
 
-- **Next.js 15** (App Router) + **React 19** + **TypeScript**
-- **Tailwind CSS v4**
-- **lucide-react** — icons
-- **framer-motion** — view transitions, progress, modals
-- **clsx** + **class-variance-authority** — component variants
-- **Supabase Auth** — Google login and cookie session
-- **SQLite (`node:sqlite`)** — signed-in local progress persistence (Node 22.5+)
+- Next.js 15 (App Router) · React 19 · TypeScript
+- Tailwind CSS v4 · framer-motion · lucide-react
+- Supabase Auth + Postgres (`edubite_*`)
 
-## Product sections
-
-| Section | Route hash | Description |
-|---------|------------|-------------|
-| Home | `#home` | Dashboard, function tiles, habits summary, streak meter |
-| DailyDose | `#dailydose` | 5-question daily quiz (+45 RDM per correct) |
-| FunBrain | `#funbrain` | 60-second sprint with combo scoring |
-| Brain Gym | `#gyan` | Mini-games hub (memory, logic, speed, visual) + daily challenge, streaks, badges, local leaderboard |
-| WA Squad | `#wasquad` | Jackpot + WhatsApp join CTA |
-| Habits | `#habits` | 9 wellbeing checkboxes |
-| Achievements | `#achievements` | Live progress badges |
-| Inspiration | `#inspiration` | Quote, role model, did-you-know |
-| AI | `#ai` | AM/PM pledges + integrity reel + research links |
-
-## Where to edit mock content
-
-All static content and thresholds live under [`data/`](data/):
-
-| File | Contents |
-|------|----------|
-| [`data/config.ts`](data/config.ts) | RDM rewards, level ladder, feature labels (Gyan++ rename), nav, WA Squad |
-| [`data/questions.ts`](data/questions.ts) | DailyDose + FunBrain question pools |
-| [`data/habits.ts`](data/habits.ts) | Habit definitions |
-| [`data/gyan.ts`](data/gyan.ts) | Legacy concept cards (unused by Brain Gym hub) |
-| [`data/brain-gym/registry.ts`](data/brain-gym/registry.ts) | Brain Gym game metadata, categories, badges |
-| [`data/achievements.ts`](data/achievements.ts) | Achievement definitions |
-| [`data/inspiration.ts`](data/inspiration.ts) | Quotes, role model, did-you-know |
-| [`data/pledges.ts`](data/pledges.ts) | Pledge copy, reel text, AI research links |
-
-Gamification logic (streak rules, level calc, achievement checks): [`lib/gamification.ts`](lib/gamification.ts).
-
-### Brain Gym
-
-- **Hub UI:** [`components/brain-gym/hub/`](components/brain-gym/hub/)
-- **Games:** [`components/brain-gym/games/`](components/brain-gym/games/)
-- **Progress storage:** signed-in users save to local SQLite via [`app/api/progress/brain-gym`](app/api/progress/brain-gym/route.ts); scoped legacy `localStorage` keys migrate once.
-- Playing games ticks `gyanTimeMs` toward the daily 30-min full-day criterion and awards RDM on session complete.
-
-## State & persistence
-
-- **Fresh start:** Level 1, 0 RDM, 0 streak, unsigned pledges, unchecked habits.
-- **Signed-in persistence (production):** Supabase tables prefixed `edubite_*` (same Auth project as Edublast, isolated data):
-  - `edubite_game_state` — Home, habits, pledges, streaks, RDM, dose/funbrain **scores**
-  - `edubite_brain_gym_progress` + `edubite_reward_claims`
-  - `edubite_puzzle_progress`
-  - `edubite_inspiration_*` — Inspiration quotes / role model
-  - `edubite_pledge_reel_*` — AM/PM reels
-- **Not on Supabase content yet:** FunBrain static fallback remains in `data/questions.ts` only if DB is empty.
-- **DailyDose on Supabase:** Class 11 & 12 PCM banks (900 MCQs each) live in `edubite_content_questions` with `class_level` — separate tracks, never merged. Import: `npm run import:pcm-daily-dose`.
-- **FunBrain on Supabase:** 1080 MCQs (`domain = funbrain`, 6/day × 180 days). Import: `npm run import:funbrain`.
-- **WA Squad:** UI only — join link is a placeholder.
-- **Auth:** Supabase session cookies.
-- **One-time migrate:** if Supabase row empty, legacy local SQLite progress is lifted once.
-
-To inspect the local SQLite database shape:
-
-```bash
-npm run test:persistence
-```
-
-## Local SQLite notes
-
-- Requires Node 22.5+ because the app uses `node:sqlite`.
-- SQLite is local to one persistent machine/server. It is not shared across Vercel/serverless instances or multiple hosts.
-- Dev mode ignores SQLite WAL files so database writes do not trigger Fast Refresh loops.
-
-Current progress API surface:
+## Project layout
 
 ```
-GET / PUT  /api/progress/game       → GameState
-GET / PUT  /api/progress/brain-gym  → BrainGymProgress + idempotent RDM reward claims
-GET / PUT  /api/progress/puzzles    → PuzzleProgress
-GET        /api/progress/health     → Supabase connectivity (public always; private if signed in)
-GET        /api/content/today       → DailyDose + FunBrain for today (DB or static fallback)
+app/            Routes, APIs, auth callback
+components/     UI, views, Brain Gym, admin
+data/           Static fallbacks + config
+lib/            Auth, content resolve, gamification, DB
+scripts/        Import / seed / smoke tests
+supabase/       SQL migrations (history)
 ```
 
-## Admin content console
+## Scripts
 
-Restricted to allowlisted Google emails (`mailidpwd@gmail.com`, `alexis36sg@gmail.com`, or `EDUBITE_ADMIN_EMAILS`).
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Dev server |
+| `npm run build` | Production build |
+| `npm run import:pcm-daily-dose` | Upload Class 11/12 PCM MCQs |
+| `npm run import:funbrain` | Upload FunBrain bank |
+| `npm run seed:pledges:am` / `:pm` | Seed pledge reels |
+| `npm run test:persistence` | Legacy smoke helper (optional) |
 
-- UI: `/admin`
-- **Supabase tables (Edubite-prefixed — not Edublast `play_questions`):**
-  - `edubite_content_questions` — dated DailyDose / FunBrain MCQs
-  - `edubite_pledge_reel_days` / `edubite_pledge_reel_slides` — AM + PM reels (`pledge_slot`)
-  - Helper: `edubite_is_content_admin()` (email allowlist; independent of Web `user_roles`)
-- APIs: `/api/admin/me`, `/api/admin/questions`, `/api/admin/schedule`, `/api/content/today`, `/api/content/pledge-reel?slot=am|pm`
-- Dual-read: published Supabase rows for today → else static `data/questions.ts` / `data/pledge-reels-am.ts` / `data/pledge-reels-pm.ts`
+## Notes
 
-```bash
-npm run seed:pledges:am   # morning learning pledge (180 days)
-npm run seed:pledges:pm   # night integrity pledge (180 days)
-```
-
-
-## Architecture / dependency map
-
-```mermaid
-flowchart TB
-  AppShell --> AppHeader
-  AppShell --> ViewRouter
-  AppShell --> ModalHost
-  AppHeader --> TopNav
-  AppHeader --> BurgerPanel
-  AppHeader --> StreakChip
-  ViewRouter --> HomeView
-  ViewRouter --> DailyDoseView
-  ViewRouter --> FunBrainView
-  ViewRouter --> GyanView
-  ViewRouter --> WASquadView
-  ViewRouter --> HabitsView
-  ViewRouter --> AchievementsView
-  ViewRouter --> InspirationView
-  ViewRouter --> AIView
-  HomeView --> StreakMeter
-  ModalHost --> PledgeSignModal
-  ModalHost --> IntegrityReelModal
-  AppShell --> GameProvider
-  GameProvider --> MockCatalog[data/*]
-  GameProvider --> SQLiteAdapter[lib/storage.ts]
-  GameProvider --> Gamification[lib/gamification.ts]
-```
-
-### Folder map
-
-```
-app/           → layout, page, global styles
-components/    → layout shell, UI primitives, section views, modals
-data/          → editable mock catalogs + config
-lib/           → types, utils, gamification, storage, store
-```
-
-## Design notes
-
-Visual tokens match the reference HTML: `#0B0D12` background, teal/amber/purple accents, Baloo 2 display + Inter body + JetBrains Mono for stats.
-
-The app shows a skeleton until `localStorage` hydrates to avoid SSR flash of wrong values.
-
----
-
-Built for investor demos. Plug in backend when ready — the UI layer is intentionally decoupled from persistence.
+- More DailyDose practice after today’s five questions → [edublast.in](https://www.edublast.in)
+- Admin console is **read-only** for question banks (no create/override UI)
+- Use `http://localhost:3000` in dev (not `127.0.0.1`) so auth cookies stay consistent

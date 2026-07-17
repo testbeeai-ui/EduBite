@@ -5,11 +5,9 @@ import {
   normalizeGameState,
 } from "@/lib/db/normalize";
 import {
-  migrateGameStateFromSqliteIfNeeded,
   readNormalizedGameState,
   writeNormalizedGameState,
 } from "@/lib/db/supabase-progress";
-import { readNormalizedGameState as readSqliteGameState } from "@/lib/db/sqlite";
 import type { GameState } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -21,12 +19,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    let state = await readNormalizedGameState(user.id);
-    if (!state) {
-      state = await migrateGameStateFromSqliteIfNeeded(user.id, () =>
-        readSqliteGameState(user.id),
-      );
-    }
+    const state = await readNormalizedGameState(user.id);
     return NextResponse.json({
       state,
       store: "edubite_game_state",
