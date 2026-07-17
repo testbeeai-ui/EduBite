@@ -9,14 +9,26 @@ export async function GET() {
     const user = await getRequestUser();
     if (!user) {
       return NextResponse.json(
-        { email: null, allowed: false },
+        { email: null, allowed: false, error: "Unauthorized" },
         { status: 401 },
       );
     }
     const email = normalizeAdminEmail(user.email);
+    const allowed = isAdminEmail(email);
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          email,
+          allowed: false,
+          userId: user.id,
+          error: "Forbidden — not on admin allowlist",
+        },
+        { status: 403 },
+      );
+    }
     return NextResponse.json({
       email,
-      allowed: isAdminEmail(email),
+      allowed: true,
       userId: user.id,
     });
   } catch (err) {

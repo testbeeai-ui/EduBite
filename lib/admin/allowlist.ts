@@ -9,7 +9,11 @@ export function normalizeAdminEmail(email: string | null | undefined): string {
 
 /** Allowlist from env (comma-separated) or the built-in defaults. */
 export function getAdminAllowlist(): string[] {
-  const fromEnv = process.env.EDUBITE_ADMIN_EMAILS?.trim();
+  const fromEnv = (
+    process.env.EDUBITE_ADMIN_EMAILS ||
+    process.env.NEXT_PUBLIC_EDUBITE_ADMIN_EMAILS ||
+    ""
+  ).trim();
   if (fromEnv) {
     return fromEnv
       .split(",")

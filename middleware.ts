@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isAdminEmail } from "@/lib/admin/allowlist";
 import { createEdubiteSupabaseMiddleware } from "@/lib/supabase/middleware";
 
 function clearAuthCookies(response: NextResponse, request: NextRequest) {
@@ -64,8 +65,16 @@ export async function middleware(request: NextRequest) {
 
   try {
     const { supabase, getResponse } = createEdubiteSupabaseMiddleware(request);
-    await supabase.auth.getUser();
-    return getResponse();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    const response = getResponse();
+    // Mark denied admins for observability; UI still renders Access denied.
+    if (pathname.startsWith("/admin") && user && !isAdminEmail(user.email)) {
+      response.headers.set("x-edubite-admin", "denied");
+    }
+    return response;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn("[middleware] session refresh skipped", message);
