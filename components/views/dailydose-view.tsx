@@ -12,7 +12,7 @@ import { useGame } from "@/lib/store/game-provider";
 import { cn } from "@/lib/utils";
 
 export function DailyDoseView() {
-  const { state, answerDose, nextDose, selectDoseClass } = useGame();
+  const { state, answerDose, nextDose, resetDose, selectDoseClass } = useGame();
   const content = useTodayContent();
   const [selected, setSelected] = useState<number | null>(null);
   
@@ -124,14 +124,18 @@ export function DailyDoseView() {
             </a>
             .
           </p>
-          <Button
-            className="mt-4"
-            onClick={() =>
-              window.open(EDUBLAST_URL, "_blank", "noopener,noreferrer")
-            }
-          >
-            Continue on edublast.in →
-          </Button>
+          <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Button variant="ghost" onClick={resetDose}>
+              Replay DailyDose
+            </Button>
+            <Button
+              onClick={() =>
+                window.open(EDUBLAST_URL, "_blank", "noopener,noreferrer")
+              }
+            >
+              Continue on edublast.in →
+            </Button>
+          </div>
         </Card>
 
         <div className="space-y-4">

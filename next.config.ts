@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
           "**/node_modules/**",
           "**/.git/**",
           "**/data/**",
+          "**/*.txt",
           "**/*.sqlite",
           "**/*.sqlite-*",
         ],

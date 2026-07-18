@@ -50,7 +50,6 @@ export function RecallReaderGame({
   const [answerStartedAt, setAnswerStartedAt] = useState(0);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(RECALL_READER_MAX_LIVES);
-  const [correctCount, setCorrectCount] = useState(0);
 
   const startRef = useRef(Date.now());
   const completedRef = useRef(false);
@@ -99,7 +98,6 @@ export function RecallReaderGame({
     setAnswerStartedAt(0);
     setScore(0);
     setLives(RECALL_READER_MAX_LIVES);
-    setCorrectCount(0);
     onScoreChange?.(0);
     onLivesChange?.(RECALL_READER_MAX_LIVES);
   }, [clearFeedbackTimeout, difficulty, onLivesChange, onScoreChange, restartKey]);
@@ -192,7 +190,6 @@ export function RecallReaderGame({
         scoreRef.current = nextScore;
         correctCountRef.current = nextCorrect;
         setScore(nextScore);
-        setCorrectCount(nextCorrect);
         onScoreChange?.(nextScore);
         setFeedback({
           correct: true,

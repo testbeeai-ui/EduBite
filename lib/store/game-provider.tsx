@@ -378,8 +378,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       });
     }
     case "RESET_FUNBRAIN":
-      // One sprint per day — never clear completion mid-day.
-      if (state.funbrain.completed) return state;
+      // Replay today's set without clearing funbrainRdmCredited; replays cannot farm
+      // already-awarded RDM, but a better score may still award the improvement.
       return {
         ...state,
         funbrain: {

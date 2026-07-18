@@ -48,4 +48,9 @@ yarn-error.log*
 # local build logs
 build-error.txt
 build-output.txt
+
+# generated question-bank import artifacts
+*_MCQs_recontextualized.txt
+*_MCQs_clean.txt
+1080FunBrain_questions.txt
 .zcode/

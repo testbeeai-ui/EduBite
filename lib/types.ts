@@ -88,7 +88,7 @@ export interface FunBrainState {
   currentQuestionIndex: number;
   /** Session just ended (same as completed for UI). */
   finished: boolean;
-  /** One sprint per day — blocks replay until day roll. */
+  /** Marks today's sprint as completed; replay keeps RDM credit protected separately. */
   completed: boolean;
 }
 

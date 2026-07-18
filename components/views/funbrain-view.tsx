@@ -14,7 +14,7 @@ import { useGame } from "@/lib/store/game-provider";
 import { cn } from "@/lib/utils";
 
 export function FunBrainView() {
-  const { state, startFunbrain, answerFunbrain } = useGame();
+  const { state, startFunbrain, answerFunbrain, resetFunbrain } = useGame();
   const content = useTodayContent();
   // Today's fixed set only (6 Q) — never the full 1080 bank in a loop.
   const pool = content.funbrain.slice(0, FUNBRAIN_QUESTIONS_PER_DAY);
@@ -64,14 +64,25 @@ export function FunBrainView() {
             </a>
             .
           </p>
-          <Button
-            className="mt-4"
-            onClick={() =>
-              window.open(EDUBLAST_URL, "_blank", "noopener,noreferrer")
-            }
-          >
-            Continue on edublast.in →
-          </Button>
+          <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSelected(null);
+                resetFunbrain();
+                startFunbrain();
+              }}
+            >
+              Replay sprint
+            </Button>
+            <Button
+              onClick={() =>
+                window.open(EDUBLAST_URL, "_blank", "noopener,noreferrer")
+              }
+            >
+              Continue on edublast.in →
+            </Button>
+          </div>
         </Card>
       </div>
     );

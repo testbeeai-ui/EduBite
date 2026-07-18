@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
+import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppHeader } from "@/components/layout/app-header";
 import { ModalHost } from "@/components/modals/modal-host";
-import { BrainGymHub } from "@/components/brain-gym/hub/brain-gym-hub";
 import { AchievementsView } from "@/components/views/achievements-view";
 import { AIView } from "@/components/views/ai-view";
 import { DailyDoseView } from "@/components/views/dailydose-view";
@@ -17,16 +17,15 @@ import { WASquadView } from "@/components/views/wasquad-view";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { useGame } from "@/lib/store/game-provider";
-import { BrainGymProvider } from "@/lib/brain-gym/hooks/use-brain-gym";
 import type { AppView } from "@/lib/types";
 
-function GyanView() {
-  return (
-    <BrainGymProvider>
-      <BrainGymHub />
-    </BrainGymProvider>
-  );
-}
+const GyanView = dynamic(
+  () => import("@/components/views/gyan-view").then((mod) => mod.GyanView),
+  {
+    ssr: false,
+    loading: () => <PageSkeleton />,
+  },
+);
 
 const VIEW_MAP: Record<AppView, React.ComponentType> = {
   home: HomeView,

@@ -3,16 +3,111 @@
 import { useEffect, useState } from "react";
 import { PLEDGE_AM, PLEDGE_PM } from "@/data/pledges";
 import { REEL_DURATION_SEC } from "@/data/config";
-import {
-  getPledgeReelForUser,
-  renderPledgeHeadline,
-  type PledgeReelDay,
-} from "@/data/pledge-reels";
 import { Button } from "@/components/ui/button";
 import { ModalCard, ModalOverlay } from "@/components/ui/modal";
 import { useGame } from "@/lib/store/game-provider";
 import type { PledgeType } from "@/lib/types";
 import { formatTime } from "@/lib/utils";
+
+type PledgeReelSlide = {
+  icon: string;
+  headline: string;
+  emphasisWord: string;
+  caption: string;
+};
+
+type PledgeReelDay = {
+  day: number;
+  theme: string;
+  slides: PledgeReelSlide[];
+};
+
+const FALLBACK_REELS: Record<PledgeType, PledgeReelDay> = {
+  am: {
+    day: 1,
+    theme: "Morning focus",
+    slides: [
+      {
+        icon: "🌅",
+        headline: "Begin with focus",
+        emphasisWord: "focus",
+        caption: "Take one calm minute before the day starts.",
+      },
+      {
+        icon: "🎯",
+        headline: "Choose the next right action",
+        emphasisWord: "action",
+        caption: "Small choices compound when they are repeated daily.",
+      },
+      {
+        icon: "📚",
+        headline: "Protect your learning time",
+        emphasisWord: "learning",
+        caption: "A steady routine beats a rushed promise.",
+      },
+      {
+        icon: "✅",
+        headline: "Sign with intention",
+        emphasisWord: "intention",
+        caption: "Mean the pledge before you move into the day.",
+      },
+    ],
+  },
+  pm: {
+    day: 1,
+    theme: "Evening integrity",
+    slides: [
+      {
+        icon: "🌙",
+        headline: "End with honesty",
+        emphasisWord: "honesty",
+        caption: "Look at the day clearly and without excuses.",
+      },
+      {
+        icon: "🧭",
+        headline: "Notice what worked",
+        emphasisWord: "worked",
+        caption: "Keep the habits that made studying easier.",
+      },
+      {
+        icon: "🛠️",
+        headline: "Repair one weak spot",
+        emphasisWord: "Repair",
+        caption: "Tomorrow improves when one problem is named tonight.",
+      },
+      {
+        icon: "✨",
+        headline: "Close the loop",
+        emphasisWord: "Close",
+        caption: "Finish the pledge and rest with a clean slate.",
+      },
+    ],
+  },
+};
+
+function fallbackReel(slot: PledgeType): PledgeReelDay {
+  return FALLBACK_REELS[slot];
+}
+
+function renderPledgeHeadline(
+  headline: string,
+  emphasisWord: string,
+): { before: string; emphasis: string; after: string } {
+  if (!emphasisWord) {
+    return { before: headline, emphasis: "", after: "" };
+  }
+  const lowerHeadline = headline.toLowerCase();
+  const lowerWord = emphasisWord.toLowerCase();
+  const idx = lowerHeadline.indexOf(lowerWord);
+  if (idx === -1) {
+    return { before: headline, emphasis: "", after: "" };
+  }
+  return {
+    before: headline.slice(0, idx),
+    emphasis: headline.slice(idx, idx + emphasisWord.length),
+    after: headline.slice(idx + emphasisWord.length),
+  };
+}
 
 export function ModalHost() {
   const {
@@ -121,7 +216,7 @@ function IntegrityReelModal({
   const slot = type === "am" ? "am" : "pm";
   const [elapsed, setElapsed] = useState(0);
   const [reelDay, setReelDay] = useState<PledgeReelDay>(() =>
-    getPledgeReelForUser(state.joinedDate, slot),
+    fallbackReel(slot),
   );
   const total = REEL_DURATION_SEC;
   const segmentSec = total / 4;
@@ -136,9 +231,7 @@ function IntegrityReelModal({
       return;
     }
     setElapsed(0);
-    // Sync immediately to the current joined date so the modal never flashes the wrong day
-    // while the async DB-backed reel request is still loading.
-    setReelDay(getPledgeReelForUser(state.joinedDate, slot));
+    setReelDay(fallbackReel(slot));
     let cancelled = false;
     void (async () => {
       try {
