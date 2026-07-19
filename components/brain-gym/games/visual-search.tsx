@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, RoundedBox, Text } from "@react-three/drei";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
-import { shuffle, pickRandom, range } from "@/lib/brain-gym/utils/shuffle";
+import { pickRandom, range } from "@/lib/brain-gym/utils/shuffle";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
 import { GameBoard, StatusLine } from "./_shared";
 import { cn } from "@/lib/utils";
 import { GAMES } from "@/data/brain-gym/registry";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 // Symbol types for visual search
 const SYMBOLS = [
@@ -472,13 +473,14 @@ export function VisualSearchGame({
   const [selectedPosition, setSelectedPosition] = useState<[number, number] | null>(null);
   const [foundPositions, setFoundPositions] = useState<Set<string>>(new Set());
   const [timeLeft, setTimeLeft] = useState(timeLimit);
-  const [startTime, setStartTime] = useState(() => Date.now());
   const [internalScore, setInternalScore] = useState(0);
   const lives = useMemo(() => {
     const gameMeta = GAMES.find(g => g.id === "visual-search");
     return gameMeta?.maxLives ?? 3;
   }, []);
   const [internalLives, setInternalLives] = useState(lives);
+  const completedRef = useRef(false);
+  const { schedule } = usePausableScheduler(paused);
 
   // Hint states
   const [hintActiveCell, setHintActiveCell] = useState<number | null>(null);
@@ -501,9 +503,9 @@ export function VisualSearchGame({
     setTimeLeft(timeLimit);
     setInternalScore(0);
     setInternalLives(lives);
-    setStartTime(Date.now());
     setHintActiveCell(null);
     setHintsUsed(0);
+    completedRef.current = false;
   }, [restartKey, timeLimit, lives]);
 
   // Reset active hint on select or timer changes
@@ -516,13 +518,13 @@ export function VisualSearchGame({
     const timer = setInterval(() => {
       if (paused) return;
       setTimeLeft(prev => {
-        if (prev <= 100) {
+        if (prev <= 100 && !completedRef.current) {
           clearInterval(timer);
-          const actualTime = timeLimit - (Date.now() - startTime);
+          completedRef.current = true;
           onComplete({
             score: foundPositions.size * 50,
             won: foundPositions.size >= numTargets,
-            timeMs: actualTime,
+            timeMs: timeLimit,
             difficulty
           });
           return 0;
@@ -532,16 +534,17 @@ export function VisualSearchGame({
     }, 100);
     
     return () => clearInterval(timer);
-  }, [timeLimit, startTime, foundPositions, numTargets, difficulty, onComplete, paused]);
+  }, [timeLimit, foundPositions, numTargets, difficulty, onComplete, paused]);
 
   useEffect(() => {
     // Check win condition
-    if (foundPositions.size >= numTargets) {
-      const timeMs = Date.now() - startTime;
+    if (foundPositions.size >= numTargets && !completedRef.current) {
+      completedRef.current = true;
+      const timeMs = Math.max(0, timeLimit - timeLeft);
       const score = Math.max(
         100,
         Math.round(
-          (numTargets * 100 + (timeLimit - (Date.now() - startTime)) / 10) * difficultyMultiplier(difficulty)
+          (numTargets * 100 + timeLeft / 10) * difficultyMultiplier(difficulty)
         )
       );
       setInternalScore(score);
@@ -549,16 +552,25 @@ export function VisualSearchGame({
     }
     
     // Check lose condition
-    if (internalLives <= 0) {
-      const timeMs = Date.now() - startTime;
+    else if (internalLives <= 0 && !completedRef.current) {
+      completedRef.current = true;
+      const timeMs = Math.max(0, timeLimit - timeLeft);
       const score = foundPositions.size * 50;
       setInternalScore(score);
       onComplete({ score, won: false, timeMs, difficulty });
     }
-  }, [foundPositions, numTargets, internalLives, timeLimit, startTime, difficulty, onComplete]);
+  }, [foundPositions, numTargets, internalLives, timeLimit, timeLeft, difficulty, onComplete]);
 
   const handleSelect = (row: number, col: number) => {
-    if (paused || selectedPosition !== null || timeLeft <= 0 || internalLives <= 0) return;
+    if (
+      paused ||
+      completedRef.current ||
+      selectedPosition !== null ||
+      timeLeft <= 0 ||
+      internalLives <= 0
+    ) {
+      return;
+    }
     
     const posKey = `${row},${col}`;
     if (foundPositions.has(posKey)) return;
@@ -568,7 +580,7 @@ export function VisualSearchGame({
     sfx.tap(soundEnabled);
     setSelectedPosition([row, col]);
     
-    setTimeout(() => {
+    schedule(() => {
       if (cell.symbol === targetSymbol) {
         // Found a target
         sfx.correct(soundEnabled);
@@ -583,7 +595,16 @@ export function VisualSearchGame({
   };
 
   const handleHint = () => {
-    if (paused || timeLeft <= 0 || internalLives <= 0 || hintsUsed >= 2 || hintActiveCell !== null) return;
+    if (
+      paused ||
+      completedRef.current ||
+      timeLeft <= 0 ||
+      internalLives <= 0 ||
+      hintsUsed >= 2 ||
+      hintActiveCell !== null
+    ) {
+      return;
+    }
     
     const unfoundIndices: number[] = [];
     for (let i = 0; i < grid.length; i++) {
@@ -602,7 +623,7 @@ export function VisualSearchGame({
       sfx.tap(soundEnabled);
       
       // Auto clear hint highlight after 3 seconds
-      setTimeout(() => {
+      schedule(() => {
         setHintActiveCell(null);
       }, 3000);
     }

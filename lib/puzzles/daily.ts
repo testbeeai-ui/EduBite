@@ -1,4 +1,4 @@
-import { PUZZLES } from "@/data/puzzles/catalog";
+import { ORIGINAL_PUZZLES, PUZZLES } from "@/data/puzzles/catalog";
 import type { PuzzleDef } from "@/lib/puzzles/types";
 import { addDaysToKey, todayKey } from "@/lib/utils";
 
@@ -8,8 +8,20 @@ export function puzzleForDate(dateKey: string): PuzzleDef {
   const ordinal = Math.floor(
     Date.UTC(y, m - 1, d) / (24 * 60 * 60 * 1000),
   );
-  const index = ((ordinal % PUZZLES.length) + PUZZLES.length) % PUZZLES.length;
-  return PUZZLES[index]!;
+  const competitiveLaunchOrdinal = Math.floor(
+    Date.UTC(2026, 6, 20) / (24 * 60 * 60 * 1000),
+  );
+  if (ordinal < competitiveLaunchOrdinal) {
+    const legacyIndex =
+      ((ordinal % ORIGINAL_PUZZLES.length) + ORIGINAL_PUZZLES.length) %
+      ORIGINAL_PUZZLES.length;
+    return ORIGINAL_PUZZLES[legacyIndex]!;
+  }
+  const daysSinceLaunch = ordinal - competitiveLaunchOrdinal;
+  const firstCompetitiveIndex = ORIGINAL_PUZZLES.length;
+  return PUZZLES[
+    (firstCompetitiveIndex + daysSinceLaunch) % PUZZLES.length
+  ]!;
 }
 
 export function todayPuzzle(): PuzzleDef {

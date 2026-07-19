@@ -1,9 +1,9 @@
 import {
   createDefaultPuzzleProgress,
+  type PuzzleAttempt,
   type PuzzleProgress,
 } from "@/lib/puzzles/types";
 import { normalizePuzzleProgress } from "@/lib/db/normalize";
-import type { SaveResult } from "@/lib/persistence/save-queue";
 import { addDaysToKey, todayKey } from "@/lib/utils";
 
 export async function loadPuzzleProgress(
@@ -27,23 +27,35 @@ export async function loadPuzzleProgress(
   }
 }
 
-export async function savePuzzleProgress(
+export type SavePuzzleAttemptResult =
+  | { ok: true; progress: PuzzleProgress; inserted: boolean }
+  | { ok: false; error: string };
+
+export async function savePuzzleAttempt(
   userId: string,
-  progress: PuzzleProgress,
-): Promise<SaveResult> {
+  attempt: Omit<PuzzleAttempt, "submittedAt">,
+): Promise<SavePuzzleAttemptResult> {
   try {
     const res = await fetch("/api/progress/puzzles", {
       method: "PUT",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        progress: normalizePuzzleProgress(progress),
+        attempt,
       }),
     });
     if (!res.ok) {
       return { ok: false, error: `puzzle save failed: ${res.status}` };
     }
-    return { ok: true };
+    const data = (await res.json()) as {
+      progress?: unknown;
+      inserted?: boolean;
+    };
+    return {
+      ok: true,
+      progress: normalizePuzzleProgress(data.progress),
+      inserted: data.inserted === true,
+    };
   } catch (err) {
     return {
       ok: false,
@@ -56,8 +68,10 @@ export function recordAttempt(
   progress: PuzzleProgress,
   puzzleId: string,
   note: string,
+  selectedOptionIndex: number | null = null,
 ): PuzzleProgress {
   const date = todayKey();
+  if (progress.attempts[date]) return progress;
   const yesterday = addDaysToKey(date, -1);
   const continuing =
     progress.lastAttemptDate === date ||
@@ -78,7 +92,10 @@ export function recordAttempt(
       [date]: {
         puzzleId,
         dateKey: date,
+        responseType:
+          selectedOptionIndex === null ? "open-ended" : "mcq",
         note: note.trim(),
+        selectedOptionIndex,
         submittedAt: new Date().toISOString(),
       },
     },

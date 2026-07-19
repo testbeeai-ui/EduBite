@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
@@ -13,6 +13,7 @@ export function MinesweeperGame({
   soundEnabled,
   onComplete,
   onScoreChange,
+  paused,
 }: GameComponentProps) {
   const size = difficulty === "hard" ? 9 : 8;
   const mines = difficulty === "easy" ? 8 : difficulty === "medium" ? 12 : 16;
@@ -22,6 +23,7 @@ export function MinesweeperGame({
   const [start] = useState(() => Date.now());
   const [dead, setDead] = useState(false);
   const [shouldShake, setShouldShake] = useState(false);
+  const completedRef = useRef(false);
 
   // Screen shake on detonation
   useEffect(() => {
@@ -71,8 +73,17 @@ export function MinesweeperGame({
   };
 
   const reveal = (i: number) => {
-    if (dead || revealed.has(i) || flagged.has(i)) return;
+    if (
+      paused ||
+      completedRef.current ||
+      dead ||
+      revealed.has(i) ||
+      flagged.has(i)
+    ) {
+      return;
+    }
     if (mineSet.has(i)) {
+      completedRef.current = true;
       sfx.lose(soundEnabled);
       setDead(true);
       setRevealed(new Set(range(size * size)));
@@ -90,6 +101,7 @@ export function MinesweeperGame({
     setRevealed(next);
     const safe = size * size - mines;
     if (next.size >= safe) {
+      completedRef.current = true;
       const timeMs = Date.now() - start;
       const score = Math.max(
         100,
@@ -103,7 +115,7 @@ export function MinesweeperGame({
 
   const flag = (e: React.MouseEvent | React.TouchEvent, i: number) => {
     e.preventDefault();
-    if (dead || revealed.has(i)) return;
+    if (paused || completedRef.current || dead || revealed.has(i)) return;
     sfx.tap(soundEnabled);
     setFlagged((f) => {
       const n = new Set(f);

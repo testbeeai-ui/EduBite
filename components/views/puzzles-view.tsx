@@ -19,7 +19,7 @@ import { useGame } from "@/lib/store/game-provider";
 import {
   formatCountdown,
   msUntilTomorrow,
-  todayPuzzle,
+  puzzleForDate,
   yesterdayPuzzle,
   yesterdayKey,
 } from "@/lib/puzzles/daily";
@@ -27,7 +27,7 @@ import type { PuzzleProgress } from "@/lib/puzzles/types";
 import {
   loadPuzzleProgress,
   recordAttempt,
-  savePuzzleProgress,
+  savePuzzleAttempt,
 } from "@/lib/puzzles/storage";
 import { formatShortDate, todayKey } from "@/lib/utils";
 
@@ -36,6 +36,9 @@ export function PuzzlesView() {
   const { withAuth } = useGame();
   const [progress, setProgress] = useState<PuzzleProgress | null>(null);
   const [note, setNote] = useState("");
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(
+    null,
+  );
   const [showHint, setShowHint] = useState(false);
   const [countdown, setCountdown] = useState(msUntilTomorrow());
   const [justSaved, setJustSaved] = useState(false);
@@ -44,7 +47,7 @@ export function PuzzlesView() {
 
   const today = todayKey();
   const yKey = yesterdayKey(today);
-  const puzzle = useMemo(() => todayPuzzle(), []);
+  const puzzle = useMemo(() => puzzleForDate(today), [today]);
   const yPuzzle = useMemo(() => yesterdayPuzzle(today), [today]);
 
   useEffect(() => {
@@ -56,6 +59,10 @@ export function PuzzlesView() {
       const existing = next.attempts[today];
       if (existing?.puzzleId === puzzle.id) {
         setNote(existing.note);
+        setSelectedOptionIndex(existing.selectedOptionIndex);
+      } else {
+        setNote("");
+        setSelectedOptionIndex(null);
       }
     })();
     return () => {
@@ -75,14 +82,28 @@ export function PuzzlesView() {
   const submitAttempt = useCallback(() => {
     withAuth(() => {
       if (!user || !progress) return;
-      const next = recordAttempt(progress, puzzle.id, note);
+      const next = recordAttempt(
+        progress,
+        puzzle.id,
+        note,
+        puzzle.kind === "mcq" ? selectedOptionIndex : null,
+      );
+      const lockedAttempt = next.attempts[today];
+      if (!lockedAttempt) return;
       setProgress(next);
       setSaving(true);
       setSaveError(null);
       setJustSaved(false);
-      void savePuzzleProgress(user.id, next).then((result) => {
+      void savePuzzleAttempt(user.id, {
+        puzzleId: lockedAttempt.puzzleId,
+        dateKey: lockedAttempt.dateKey,
+        responseType: lockedAttempt.responseType,
+        note: lockedAttempt.note,
+        selectedOptionIndex: lockedAttempt.selectedOptionIndex,
+      }).then((result) => {
         setSaving(false);
         if (result.ok) {
+          setProgress(result.progress);
           setJustSaved(true);
           window.setTimeout(() => setJustSaved(false), 2200);
           return;
@@ -91,7 +112,15 @@ export function PuzzlesView() {
         setSaveError("Could not save yet. Please try again.");
       });
     });
-  }, [withAuth, user, progress, puzzle.id, note]);
+  }, [
+    withAuth,
+    user,
+    progress,
+    puzzle,
+    note,
+    selectedOptionIndex,
+    today,
+  ]);
 
   const attemptedCount = progress
     ? Object.keys(progress.attempts).length
@@ -162,7 +191,9 @@ export function PuzzlesView() {
               Today&apos;s puzzle
             </span>
             <span className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-mono text-[var(--text-dim)]">
-              Class {puzzle.grade}
+              {puzzle.grade === "Competitive"
+                ? "Competitive"
+                : `Class ${puzzle.grade}`}
             </span>
             <span className="rounded-full border border-[var(--line)] px-2.5 py-1 text-[11px] font-mono text-[var(--text-dim)]">
               {puzzle.topic}
@@ -202,26 +233,73 @@ export function PuzzlesView() {
             </AnimatePresence>
           </div>
 
-          <label className="mt-7 block">
-            <span className="font-mono text-[11px] uppercase tracking-wider text-[var(--text-dim)]">
-              Your working &amp; answer
-            </span>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={5}
-              placeholder="Scratch your reasoning here… official answer unlocks tomorrow."
-              className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)]/60 px-4 py-3 text-sm leading-relaxed text-[var(--text)] placeholder:text-[var(--text-dim)]/70 focus:outline-none focus:ring-2 focus:ring-gold/40 resize-y min-h-[120px]"
-            />
-          </label>
+          {puzzle.kind === "mcq" ? (
+            <fieldset className="mt-7" disabled={hasAttempt || saving}>
+              <legend className="font-mono text-[11px] uppercase tracking-wider text-[var(--text-dim)]">
+                Choose one answer
+              </legend>
+              <div className="mt-3 grid gap-3">
+                {puzzle.options.map((option, index) => {
+                  const selected = selectedOptionIndex === index;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() => setSelectedOptionIndex(index)}
+                      className={`rounded-xl border px-4 py-3 text-left text-sm transition-colors ${
+                        selected
+                          ? "border-gold bg-gold/15 text-[var(--text)]"
+                          : "border-[var(--line)] bg-[var(--bg)]/60 text-[var(--text-dim)] hover:border-gold/50"
+                      } disabled:cursor-not-allowed disabled:opacity-75`}
+                    >
+                      <span className="mr-2 font-mono text-xs text-gold">
+                        {String.fromCharCode(65 + index)}.
+                      </span>
+                      {option}
+                    </button>
+                  );
+                })}
+              </div>
+              {hasAttempt && (
+                <p className="mt-3 text-xs font-mono text-teal">
+                  Your choice is locked. The correct answer opens tomorrow.
+                </p>
+              )}
+            </fieldset>
+          ) : (
+            <label className="mt-7 block">
+              <span className="font-mono text-[11px] uppercase tracking-wider text-[var(--text-dim)]">
+                Your working &amp; answer
+              </span>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                disabled={hasAttempt || saving}
+                rows={5}
+                placeholder="Scratch your reasoning here… official answer unlocks tomorrow."
+                className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)]/60 px-4 py-3 text-sm leading-relaxed text-[var(--text)] placeholder:text-[var(--text-dim)]/70 focus:outline-none focus:ring-2 focus:ring-gold/40 resize-y min-h-[120px] disabled:cursor-not-allowed disabled:opacity-75"
+              />
+            </label>
+          )}
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button
               variant="am"
               onClick={submitAttempt}
-              disabled={saving || (!note.trim() && !hasAttempt)}
+              disabled={
+                saving ||
+                hasAttempt ||
+                (puzzle.kind === "mcq"
+                  ? selectedOptionIndex === null
+                  : !note.trim())
+              }
             >
-              {saving ? "Saving..." : hasAttempt ? "Update attempt" : "Lock in attempt"}
+              {saving
+                ? "Saving..."
+                : hasAttempt
+                  ? "Attempt locked"
+                  : "Lock in attempt"}
             </Button>
             {hasAttempt && (
               <span className="text-xs text-teal font-mono">
@@ -296,7 +374,11 @@ export function PuzzlesView() {
               </h3>
             </div>
             <p className="font-mono text-[11px] text-[var(--text-dim)] mb-1">
-              {formatShortDate(yKey)} · Class {yPuzzle.grade} · {yPuzzle.topic}
+              {formatShortDate(yKey)} ·{" "}
+              {yPuzzle.grade === "Competitive"
+                ? "Competitive"
+                : `Class ${yPuzzle.grade}`}{" "}
+              · {yPuzzle.topic}
             </p>
             <h4 className="font-display font-semibold text-lg">{yPuzzle.title}</h4>
             <p className="mt-2 text-sm text-[var(--text-dim)] leading-relaxed line-clamp-3 whitespace-pre-wrap">
@@ -307,16 +389,22 @@ export function PuzzlesView() {
                 Official answer
               </p>
               <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                {yPuzzle.answer}
+                {yPuzzle.kind === "mcq"
+                  ? `${String.fromCharCode(65 + yPuzzle.correctOptionIndex)}. ${yPuzzle.options[yPuzzle.correctOptionIndex]}\n\n${yPuzzle.answer}`
+                  : yPuzzle.answer}
               </p>
             </div>
-            {yesterdayAttempt?.note ? (
+            {yesterdayAttempt ? (
               <div className="mt-3 rounded-xl border border-[var(--line)] px-4 py-3">
                 <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-dim)] mb-1.5">
                   Your attempt
                 </p>
                 <p className="text-sm text-[var(--text-dim)] leading-relaxed whitespace-pre-wrap">
-                  {yesterdayAttempt.note}
+                  {yesterdayAttempt.responseType === "mcq" &&
+                  yPuzzle.kind === "mcq" &&
+                  yesterdayAttempt.selectedOptionIndex !== null
+                    ? `${String.fromCharCode(65 + yesterdayAttempt.selectedOptionIndex)}. ${yPuzzle.options[yesterdayAttempt.selectedOptionIndex]}`
+                    : yesterdayAttempt.note}
                 </p>
               </div>
             ) : (

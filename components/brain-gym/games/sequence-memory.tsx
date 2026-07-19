@@ -1,11 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
-import { GameBoard, StatusLine, CellButton } from "./_shared";
 import { cn } from "@/lib/utils";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 export function SequenceMemoryGame({
   difficulty,
@@ -23,22 +23,33 @@ export function SequenceMemoryGame({
   const [lives, setLives] = useState(3);
   const [score, setScore] = useState(0);
   const [start] = useState(() => Date.now());
+  const completedRef = useRef(false);
+  const { schedule } = usePausableScheduler(paused);
 
   const playSeq = useCallback(
-    async (s: number[]) => {
+    (s: number[]) => {
       setMode("watch");
       setInput([]);
-      for (const n of s) {
-        if (paused) await new Promise((r) => setTimeout(r, 200));
+      let index = 0;
+      const showNext = () => {
+        if (index >= s.length) {
+          setMode("input");
+          return;
+        }
+        const n = s[index]!;
         setLit(n);
         sfx.tap(soundEnabled);
-        await new Promise((r) => setTimeout(r, difficulty === "hard" ? 380 : 520));
-        setLit(null);
-        await new Promise((r) => setTimeout(r, 140));
-      }
-      setMode("input");
+        schedule(() => {
+          setLit(null);
+          schedule(() => {
+            index++;
+            showNext();
+          }, 140);
+        }, difficulty === "hard" ? 380 : 520);
+      };
+      showNext();
     },
-    [soundEnabled, difficulty, paused],
+    [soundEnabled, difficulty, schedule],
   );
 
   useEffect(() => {
@@ -53,9 +64,10 @@ export function SequenceMemoryGame({
     setLives(nextLives);
     onLivesChange?.(nextLives);
     if (nextLives <= 0) {
+      completedRef.current = true;
       onComplete({
         score,
-        won: score >= 3,
+        won: false,
         timeMs: Date.now() - start,
         difficulty,
       });
@@ -65,7 +77,7 @@ export function SequenceMemoryGame({
   };
 
   const tap = (i: number) => {
-    if (paused || mode !== "input") return;
+    if (paused || mode !== "input" || completedRef.current) return;
     sfx.tap(soundEnabled);
     const next = [...input, i];
     setInput(next);
@@ -80,12 +92,13 @@ export function SequenceMemoryGame({
       setScore(ns);
       onScoreChange?.(ns);
       if (seq.length >= (difficulty === "easy" ? 8 : difficulty === "medium" ? 10 : 12)) {
+        completedRef.current = true;
         onComplete({ score: ns, won: true, timeMs: Date.now() - start, difficulty });
         return;
       }
       const extended = [...seq, Math.floor(Math.random() * grid)];
       setSeq(extended);
-      setTimeout(() => void playSeq(extended), 450);
+      schedule(() => playSeq(extended), 450);
     }
   };
 

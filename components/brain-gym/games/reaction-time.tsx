@@ -6,6 +6,7 @@ import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
 import { GameBoard, StatusLine } from "./_shared";
 import { cn } from "@/lib/utils";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 export function ReactionTimeGame({
   difficulty,
@@ -19,15 +20,21 @@ export function ReactionTimeGame({
   const [times, setTimes] = useState<number[]>([]);
   const [round, setRound] = useState(0);
   const goAt = useRef(0);
-  const timer = useRef<number | null>(null);
+  const activeReactionMsRef = useRef(0);
+  const completedRef = useRef(false);
+  const armCancelRef = useRef<(() => void) | null>(null);
+  const { schedule } = usePausableScheduler(paused);
   const [start] = useState(() => Date.now());
 
   const arm = () => {
+    if (completedRef.current) return;
     setPhase("ready");
     const delay =
       (difficulty === "hard" ? 800 : 1200) + Math.random() * (difficulty === "easy" ? 2500 : 1800);
-    timer.current = window.setTimeout(() => {
+    armCancelRef.current = schedule(() => {
+      if (completedRef.current) return;
       goAt.current = performance.now();
+      activeReactionMsRef.current = 1;
       setPhase("go");
       sfx.tick(soundEnabled);
     }, delay);
@@ -35,23 +42,35 @@ export function ReactionTimeGame({
 
   useEffect(() => {
     arm();
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
+    return () => armCancelRef.current?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (phase !== "go" || paused || completedRef.current) return;
+    let last = performance.now();
+    const interval = window.setInterval(() => {
+      const now = performance.now();
+      activeReactionMsRef.current += now - last;
+      last = now;
+    }, 10);
+    return () => window.clearInterval(interval);
+  }, [paused, phase]);
+
   const tap = () => {
-    if (paused) return;
+    if (paused || completedRef.current) return;
     if (phase === "ready") {
-      if (timer.current) clearTimeout(timer.current);
+      armCancelRef.current?.();
       sfx.wrong(soundEnabled);
       setPhase("early");
-      setTimeout(() => arm(), 800);
+      schedule(arm, 800);
       return;
     }
     if (phase !== "go") return;
-    const ms = Math.round(performance.now() - goAt.current);
+    const ms = Math.max(
+      1,
+      Math.round(activeReactionMsRef.current || performance.now() - goAt.current),
+    );
     sfx.correct(soundEnabled);
     const next = [...times, ms];
     setTimes(next);
@@ -64,9 +83,10 @@ export function ReactionTimeGame({
     );
     onScoreChange?.(score);
     if (r >= rounds) {
+      completedRef.current = true;
       onComplete({
         score: Math.round(score * (next.length / rounds) + (600 - avg)),
-        won: avg < 450,
+        won: true,
         timeMs: Date.now() - start,
         difficulty,
         extra: { avgMs: Math.round(avg) },
@@ -74,7 +94,7 @@ export function ReactionTimeGame({
       setPhase("done");
     } else {
       setPhase("wait");
-      setTimeout(() => arm(), 600);
+      schedule(arm, 600);
     }
   };
 

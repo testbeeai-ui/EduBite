@@ -12,12 +12,12 @@ import {
 } from "react";
 import {
   applySessionResult,
+  isDifficultyLocked,
   loadBrainGym,
   saveBrainGym,
   setSound,
   toggleFavorite,
 } from "@/lib/brain-gym/storage";
-import { createSaveQueue } from "@/lib/persistence/save-queue";
 import type {
   BrainGymProgress,
   Difficulty,
@@ -66,22 +66,13 @@ export function BrainGymProvider({ children }: { children: ReactNode }) {
   );
   const [lastResult, setLastResult] =
     useState<BrainGymContextValue["lastResult"]>(null);
-  const userIdRef = useRef<string | null>(null);
-  const saveQueueRef = useRef(
-    createSaveQueue<BrainGymProgress>(async (next) => {
-      const id = userIdRef.current;
-      if (!id) return { ok: false, error: "Not signed in" };
-      const result = await saveBrainGym(id, next);
-      return result.ok ? { ok: true } : result;
-    }),
-  );
+  const mutationSeqRef = useRef(0);
 
   const userId = user?.id ?? null;
 
   useEffect(() => {
     let cancelled = false;
-    userIdRef.current = userId;
-    saveQueueRef.current.invalidate();
+    mutationSeqRef.current++;
     setProgress(null);
     setActiveGameId(null);
     setIsDailyRun(false);
@@ -90,7 +81,6 @@ export function BrainGymProvider({ children }: { children: ReactNode }) {
     void (async () => {
       const next = await loadBrainGym(userId);
       if (!cancelled) {
-        saveQueueRef.current.setBaseline(next);
         setProgress(next);
       }
     })();
@@ -99,11 +89,6 @@ export function BrainGymProvider({ children }: { children: ReactNode }) {
       cancelled = true;
     };
   }, [userId]);
-
-  useEffect(() => {
-    if (!progress || !userId) return;
-    saveQueueRef.current.enqueue(progress);
-  }, [progress, userId]);
 
   useEffect(() => {
     if (!activeGameId) return;
@@ -132,6 +117,11 @@ export function BrainGymProvider({ children }: { children: ReactNode }) {
       if (!progress || !activeGameId) {
         return { rdmGain: 0, newBadges: [] as string[] };
       }
+      if (
+        isDifficultyLocked(progress, activeGameId, result.difficulty)
+      ) {
+        return { rdmGain: 0, newBadges: [] as string[] };
+      }
       const { progress: next, newBadges, rdmGain } = applySessionResult(
         progress,
         activeGameId,
@@ -140,13 +130,20 @@ export function BrainGymProvider({ children }: { children: ReactNode }) {
       );
       setProgress(next);
       setLastResult({ result, rdmGain, newBadges });
-      const claimId = `${activeGameId}:${Date.now()}:${Math.round(result.score)}:${Math.round(result.timeMs)}`;
+      const sessionId = crypto.randomUUID();
+      const mutationSeq = ++mutationSeqRef.current;
       void saveBrainGym(userId, next, {
-        claimId,
-        rdmDelta: rdmGain,
+        type: "session",
+        sessionId,
+        gameId: activeGameId,
+        result,
+        isDaily: isDailyRun,
+        baseProgress: progress,
       }).then((save) => {
         if (!save.ok) return;
-        saveQueueRef.current.setBaseline(next);
+        if (mutationSeq === mutationSeqRef.current) {
+          setProgress(save.progress);
+        }
         if (save.gameRdm !== null) {
           syncRdm(save.gameRdm);
         } else if (rdmGain > 0) {
@@ -159,16 +156,38 @@ export function BrainGymProvider({ children }: { children: ReactNode }) {
   );
 
   const toggleSound = useCallback(() => {
-    setProgress((p) => (p ? setSound(p, !p.soundEnabled) : p));
-  }, []);
+    if (!progress) return;
+    const enabled = !progress.soundEnabled;
+    const next = setSound(progress, enabled);
+    setProgress(next);
+    const mutationSeq = ++mutationSeqRef.current;
+    void saveBrainGym(userId, next, { type: "sound", enabled }).then((save) => {
+      if (save.ok && mutationSeq === mutationSeqRef.current) {
+        setProgress(save.progress);
+      }
+    });
+  }, [progress, userId]);
 
   const toggleFav = useCallback(
     (id: GameId) => {
       withAuth(() => {
-        setProgress((p) => (p ? toggleFavorite(p, id) : p));
+        if (!progress) return;
+        const next = toggleFavorite(progress, id);
+        const favorite = !!next.games[id]?.favorite;
+        setProgress(next);
+        const mutationSeq = ++mutationSeqRef.current;
+        void saveBrainGym(userId, next, {
+          type: "favorite",
+          gameId: id,
+          favorite,
+        }).then((save) => {
+          if (save.ok && mutationSeq === mutationSeqRef.current) {
+            setProgress(save.progress);
+          }
+        });
       });
     },
-    [withAuth],
+    [progress, userId, withAuth],
   );
 
   const clearLastResult = useCallback(() => setLastResult(null), []);

@@ -22,73 +22,6 @@ type PledgeReelDay = {
   slides: PledgeReelSlide[];
 };
 
-const FALLBACK_REELS: Record<PledgeType, PledgeReelDay> = {
-  am: {
-    day: 1,
-    theme: "Morning focus",
-    slides: [
-      {
-        icon: "🌅",
-        headline: "Begin with focus",
-        emphasisWord: "focus",
-        caption: "Take one calm minute before the day starts.",
-      },
-      {
-        icon: "🎯",
-        headline: "Choose the next right action",
-        emphasisWord: "action",
-        caption: "Small choices compound when they are repeated daily.",
-      },
-      {
-        icon: "📚",
-        headline: "Protect your learning time",
-        emphasisWord: "learning",
-        caption: "A steady routine beats a rushed promise.",
-      },
-      {
-        icon: "✅",
-        headline: "Sign with intention",
-        emphasisWord: "intention",
-        caption: "Mean the pledge before you move into the day.",
-      },
-    ],
-  },
-  pm: {
-    day: 1,
-    theme: "Evening integrity",
-    slides: [
-      {
-        icon: "🌙",
-        headline: "End with honesty",
-        emphasisWord: "honesty",
-        caption: "Look at the day clearly and without excuses.",
-      },
-      {
-        icon: "🧭",
-        headline: "Notice what worked",
-        emphasisWord: "worked",
-        caption: "Keep the habits that made studying easier.",
-      },
-      {
-        icon: "🛠️",
-        headline: "Repair one weak spot",
-        emphasisWord: "Repair",
-        caption: "Tomorrow improves when one problem is named tonight.",
-      },
-      {
-        icon: "✨",
-        headline: "Close the loop",
-        emphasisWord: "Close",
-        caption: "Finish the pledge and rest with a clean slate.",
-      },
-    ],
-  },
-};
-
-function fallbackReel(slot: PledgeType): PledgeReelDay {
-  return FALLBACK_REELS[slot];
-}
-
 function renderPledgeHeadline(
   headline: string,
   emphasisWord: string,
@@ -215,48 +148,89 @@ function IntegrityReelModal({
   const { state } = useGame();
   const slot = type === "am" ? "am" : "pm";
   const [elapsed, setElapsed] = useState(0);
-  const [reelDay, setReelDay] = useState<PledgeReelDay>(() =>
-    fallbackReel(slot),
-  );
+  const [reelDay, setReelDay] = useState<PledgeReelDay | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const total = REEL_DURATION_SEC;
-  const segmentSec = total / 4;
-  const done = elapsed >= total;
-  const slideIndex = Math.min(3, Math.floor(elapsed / segmentSec));
-  const slide = reelDay.slides[slideIndex] ?? reelDay.slides[0]!;
-  const headline = renderPledgeHeadline(slide.headline, slide.emphasisWord);
 
   useEffect(() => {
     if (!open) {
       setElapsed(0);
+      setReelDay(null);
+      setLoadFailed(false);
       return;
     }
+
     setElapsed(0);
-    setReelDay(fallbackReel(slot));
+    setReelDay(null);
+    setLoadFailed(false);
     let cancelled = false;
+
     void (async () => {
       try {
         const res = await fetch(
           `/api/content/pledge-reel?joinedDate=${encodeURIComponent(state.joinedDate)}&slot=${slot}`,
           { credentials: "include" },
         );
-        if (!res.ok) return;
+        if (!res.ok) throw new Error("Pledge reel request failed");
         const data = (await res.json()) as { reel?: PledgeReelDay };
         if (!cancelled && data.reel?.slides?.length === 4) {
           setReelDay(data.reel);
+          return;
         }
+        if (!cancelled) setLoadFailed(true);
       } catch {
-        // keep static fallback
+        if (!cancelled) setLoadFailed(true);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, state.joinedDate, slot]);
+
+  useEffect(() => {
+    if (!open || !reelDay) return;
+
     const id = window.setInterval(() => {
       setElapsed((e) => Math.min(total, e + 1));
     }, 1000);
+
     return () => {
-      cancelled = true;
       window.clearInterval(id);
     };
-  }, [open, total, state.joinedDate, slot]);
+  }, [open, reelDay, total]);
 
+  if (!type) return null;
+
+  if (!reelDay) {
+    return (
+      <ModalOverlay open={open} onClose={onClose}>
+        <div className="w-full max-w-[340px] mx-auto rounded-[22px] overflow-hidden bg-gradient-to-b from-[#1a1030] to-[#05070B] border border-[var(--line)]">
+          <div className="min-h-[300px] flex flex-col items-center justify-center px-8 text-center">
+            <h2 className="font-display font-extrabold text-[21px]">
+              {loadFailed ? "Couldn’t load today’s pledge" : "Loading today’s pledge…"}
+            </h2>
+            <p className="text-[12.5px] text-[var(--text-dim)] mt-3 leading-relaxed">
+              {loadFailed
+                ? "Close this window and try again."
+                : "Getting the correct day for you."}
+            </p>
+            {loadFailed && (
+              <Button variant="ghost" className="mt-5" onClick={onClose}>
+                Close
+              </Button>
+            )}
+          </div>
+        </div>
+      </ModalOverlay>
+    );
+  }
+
+  const segmentSec = total / 4;
+  const done = elapsed >= total;
+  const slideIndex = Math.min(3, Math.floor(elapsed / segmentSec));
+  const slide = reelDay.slides[slideIndex] ?? reelDay.slides[0]!;
+  const headline = renderPledgeHeadline(slide.headline, slide.emphasisWord);
   const pct = elapsed / total;
   const segFill = (idx: number) => {
     const segIndex = Math.min(3, Math.floor(pct * 4));
@@ -265,8 +239,6 @@ function IntegrityReelModal({
     if (idx === segIndex) return fill;
     return 0;
   };
-
-  if (!type) return null;
 
   return (
     <ModalOverlay open={open} onClose={onClose}>

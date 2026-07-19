@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { shuffle, range } from "@/lib/brain-gym/utils/shuffle";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
 import { GameBoard, StatusLine, CellButton } from "./_shared";
 import { cn } from "@/lib/utils";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 const ICONS = [
   "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔",
@@ -41,13 +42,15 @@ export function ImageMemoryGame({
   const [score, setScore] = useState(0);
   const [round, setRound] = useState(1);
   const [start] = useState(() => Date.now());
+  const completedRef = useRef(false);
+  const { schedule } = usePausableScheduler(paused);
 
   const setup = () => {
     const g = shuffle(ICONS).slice(0, n);
     setGrid(g);
     setAnswer(Math.floor(Math.random() * n));
     setPhase("study");
-    setTimeout(() => setPhase("quiz"), difficulty === "hard" ? 1200 : 2000);
+    schedule(() => setPhase("quiz"), difficulty === "hard" ? 1200 : 2000);
   };
 
   useEffect(() => {
@@ -62,17 +65,18 @@ export function ImageMemoryGame({
   };
 
   const pick = (i: number) => {
-    if (paused || phase !== "quiz") return;
+    if (paused || phase !== "quiz" || completedRef.current) return;
     if (i === answer) {
       sfx.correct(soundEnabled);
       const ns = score + Math.round(45 * difficultyMultiplier(difficulty) * round);
       setScore(ns);
       onScoreChange?.(ns);
       if (round >= 5) {
+        completedRef.current = true;
         onComplete({ score: ns, won: true, timeMs: Date.now() - start, difficulty });
       } else {
         setRound((r) => r + 1);
-        setTimeout(setup, 350);
+        schedule(setup, 350);
       }
     } else {
       sfx.wrong(soundEnabled);
@@ -80,8 +84,9 @@ export function ImageMemoryGame({
       setLives(nl);
       onLivesChange?.(nl);
       if (nl <= 0) {
+        completedRef.current = true;
         onComplete({ score, won: false, timeMs: Date.now() - start, difficulty });
-      } else setTimeout(setup, 350);
+      } else schedule(setup, 350);
     }
   };
 

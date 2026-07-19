@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { getRequestUser } from "@/lib/auth/server";
 import {
   assertPayloadSize,
-  normalizePuzzleProgress,
 } from "@/lib/db/normalize";
 import {
+  lockPuzzleAttempt,
   readNormalizedPuzzleProgress,
-  writeNormalizedPuzzleProgress,
 } from "@/lib/db/supabase-progress";
-import type { PuzzleProgress } from "@/lib/puzzles/types";
+import { puzzleForDate } from "@/lib/puzzles/daily";
+import type { PuzzleAttempt } from "@/lib/puzzles/types";
 
 export const runtime = "nodejs";
 
@@ -46,18 +46,52 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const progress = (body as { progress?: PuzzleProgress })?.progress;
-    if (!progress || typeof progress !== "object") {
-      return NextResponse.json({ error: "Missing progress" }, { status: 400 });
+    const attempt = (body as {
+      attempt?: Omit<PuzzleAttempt, "submittedAt">;
+    })?.attempt;
+    if (!attempt || typeof attempt !== "object") {
+      return NextResponse.json({ error: "Missing attempt" }, { status: 400 });
     }
-
-    const normalized = await writeNormalizedPuzzleProgress(
-      user.id,
-      normalizePuzzleProgress(progress),
-    );
+    if (
+      typeof attempt.puzzleId !== "string" ||
+      typeof attempt.dateKey !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(attempt.dateKey) ||
+      typeof attempt.note !== "string"
+    ) {
+      return NextResponse.json({ error: "Invalid attempt" }, { status: 400 });
+    }
+    const puzzle = puzzleForDate(attempt.dateKey);
+    const validBase =
+      puzzle !== undefined &&
+      attempt.puzzleId === puzzle.id &&
+      (attempt.responseType === "open-ended" ||
+        attempt.responseType === "mcq");
+    const validResponse =
+      puzzle.kind === "mcq"
+        ? attempt.responseType === "mcq" &&
+          Number.isInteger(attempt.selectedOptionIndex) &&
+          attempt.selectedOptionIndex !== null &&
+          attempt.selectedOptionIndex >= 0 &&
+          attempt.selectedOptionIndex < puzzle.options.length
+        : attempt.responseType === "open-ended" &&
+          attempt.selectedOptionIndex === null &&
+          typeof attempt.note === "string" &&
+          attempt.note.trim().length > 0;
+    if (!validBase || !validResponse) {
+      return NextResponse.json({ error: "Invalid attempt" }, { status: 400 });
+    }
+    const result = await lockPuzzleAttempt(user.id, {
+      puzzleId: puzzle.id,
+      dateKey: attempt.dateKey,
+      responseType: attempt.responseType,
+      note: attempt.responseType === "open-ended" ? attempt.note : "",
+      selectedOptionIndex:
+        attempt.responseType === "mcq" ? attempt.selectedOptionIndex : null,
+    });
     return NextResponse.json({
       ok: true,
-      progress: normalized,
+      progress: result.progress,
+      inserted: result.inserted,
       store: "edubite_puzzle_progress",
     });
   } catch (err) {

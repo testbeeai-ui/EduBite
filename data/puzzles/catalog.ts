@@ -1,10 +1,11 @@
 import type { PuzzleDef } from "@/lib/puzzles/types";
+import { COMPETITIVE_PUZZLES } from "@/data/puzzles/competitive-catalog";
 
 /**
  * Class XI & XII puzzles sourced from EduBite puzzle pack.
  * Answers unlock the calendar day AFTER the puzzle is shown.
  */
-export const PUZZLES: PuzzleDef[] = [
+export const ORIGINAL_PUZZLES: PuzzleDef[] = [
   {
     id: "three-switches",
     number: 1,
@@ -192,6 +193,11 @@ export const PUZZLES: PuzzleDef[] = [
     answer: "The numbers should be 10 and 10.",
     topic: "Math",
   },
+];
+
+export const PUZZLES: PuzzleDef[] = [
+  ...ORIGINAL_PUZZLES,
+  ...COMPETITIVE_PUZZLES,
 ];
 
 export const PUZZLE_MAP: Record<string, PuzzleDef> = Object.fromEntries(

@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
 import { GameBoard, StatusLine } from "./_shared";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 export function NumberFlashGame({
   difficulty,
@@ -23,23 +24,28 @@ export function NumberFlashGame({
   const [score, setScore] = useState(0);
   const [round, setRound] = useState(1);
   const [start] = useState(() => Date.now());
+  const completedRef = useRef(false);
+  const { schedule } = usePausableScheduler(paused);
 
   const flash = (s: number[]) => {
     setPhase("flash");
     setAnswer("");
     let i = 0;
     setDisplay(String(s[0]));
-    const id = window.setInterval(() => {
-      i++;
-      if (i >= s.length) {
-        clearInterval(id);
-        setDisplay("?");
-        setPhase("input");
-        return;
-      }
-      setDisplay(String(s[i]));
-      sfx.tick(soundEnabled);
-    }, difficulty === "hard" ? 450 : 700);
+    const nextDigit = () => {
+      schedule(() => {
+        i++;
+        if (i >= s.length) {
+          setDisplay("?");
+          setPhase("input");
+          return;
+        }
+        setDisplay(String(s[i]));
+        sfx.tick(soundEnabled);
+        nextDigit();
+      }, difficulty === "hard" ? 450 : 700);
+    };
+    nextDigit();
   };
 
   useEffect(() => {
@@ -50,7 +56,7 @@ export function NumberFlashGame({
   }, []);
 
   const submit = () => {
-    if (paused || phase !== "input") return;
+    if (paused || phase !== "input" || completedRef.current) return;
     const target = seq.join("");
     if (answer.replace(/\s/g, "") === target) {
       sfx.correct(soundEnabled);
@@ -58,6 +64,7 @@ export function NumberFlashGame({
       setScore(ns);
       onScoreChange?.(ns);
       if (round >= 5) {
+        completedRef.current = true;
         onComplete({ score: ns, won: true, timeMs: Date.now() - start, difficulty });
         return;
       }
@@ -65,15 +72,16 @@ export function NumberFlashGame({
       const s = Array.from({ length: nextLen }, () => Math.floor(Math.random() * 10));
       setSeq(s);
       setRound((r) => r + 1);
-      setTimeout(() => flash(s), 300);
+      schedule(() => flash(s), 300);
     } else {
       sfx.wrong(soundEnabled);
       const nl = lives - 1;
       setLives(nl);
       onLivesChange?.(nl);
       if (nl <= 0) {
+        completedRef.current = true;
         onComplete({ score, won: false, timeMs: Date.now() - start, difficulty });
-      } else setTimeout(() => flash(seq), 300);
+      } else schedule(() => flash(seq), 300);
     }
   };
 

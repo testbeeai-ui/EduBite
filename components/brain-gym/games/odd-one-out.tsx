@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
@@ -73,11 +73,12 @@ function generateRound(): { items: string[]; odd: string } {
   const mainEmojis = pickNFrom(CATEGORIES[mainKey]!, 3);
 
   let oddKey = pickRandomFrom(CATEGORY_KEYS);
-  while (oddKey === mainKey) {
+  let oddEmoji = pickRandomFrom(CATEGORIES[oddKey]!);
+  while (oddKey === mainKey || mainEmojis.includes(oddEmoji)) {
     oddKey = pickRandomFrom(CATEGORY_KEYS);
+    oddEmoji = pickRandomFrom(CATEGORIES[oddKey]!);
   }
 
-  const oddEmoji = pickRandomFrom(CATEGORIES[oddKey]!);
   return { items: shuffle([...mainEmojis, oddEmoji]), odd: oddEmoji };
 }
 
@@ -95,9 +96,10 @@ export function OddOneOutGame({
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [start] = useState(() => Date.now());
+  const completedRef = useRef(false);
 
   const pick = (item: string) => {
-    if (paused) return;
+    if (paused || completedRef.current) return;
     if (item === round.odd) {
       sfx.correct(soundEnabled);
       const ns = score + Math.round(20 * difficultyMultiplier(difficulty));
@@ -105,6 +107,7 @@ export function OddOneOutGame({
       onScoreChange?.(ns);
       const n = idx + 1;
       if (n >= total) {
+        completedRef.current = true;
         onComplete({ score: ns, won: true, timeMs: Date.now() - start, difficulty });
       } else {
         setIdx(n);
@@ -116,6 +119,7 @@ export function OddOneOutGame({
       setLives(nl);
       onLivesChange?.(nl);
       if (nl <= 0) {
+        completedRef.current = true;
         onComplete({ score, won: false, timeMs: Date.now() - start, difficulty });
       }
     }

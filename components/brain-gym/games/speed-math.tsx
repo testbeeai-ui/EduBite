@@ -8,11 +8,11 @@ import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { shuffle, range } from "@/lib/brain-gym/utils/shuffle";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
-import { GameBoard } from "./_shared";
 import { cn } from "@/lib/utils";
 import { GAMES } from "@/data/brain-gym/registry";
 import { motion } from "framer-motion";
 import { HelpCircle, Timer, Star } from "lucide-react";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 // Question Card component
 function QuestionCard3D({
@@ -387,8 +387,8 @@ export function SpeedMathGame({
   const [internalScore, setInternalScore] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
   const [timeLeft, setTimeLeft] = useState(timeLimit);
-  const [startTime, setStartTime] = useState(() => Date.now());
   const [completed, setCompleted] = useState(false);
+  const completedRef = useRef(false);
   
   const lives = useMemo(() => {
     const gameMeta = GAMES.find(g => g.id === "speed-math");
@@ -397,6 +397,7 @@ export function SpeedMathGame({
   const [internalLives, setInternalLives] = useState(lives);
   const [hintActive, setHintActive] = useState(false);
   const [hintsLeft, setHintsLeft] = useState(3);
+  const { schedule } = usePausableScheduler(paused);
 
   // Sync score with parent
   useEffect(() => {
@@ -416,8 +417,8 @@ export function SpeedMathGame({
     setInternalScore(0);
     setCorrectCount(0);
     setTimeLeft(timeLimit);
-    setStartTime(Date.now());
     setCompleted(false);
+    completedRef.current = false;
     setInternalLives(lives);
     setHintActive(false);
     setHintsLeft(3);
@@ -428,6 +429,7 @@ export function SpeedMathGame({
 
   // Generate answer options (including wrong answers)
   const answerOptions = useMemo(() => {
+    void currentIndex;
     if (!currentEquation) return [];
     const options = new Set<number>();
     options.add(correctAnswer);
@@ -448,66 +450,70 @@ export function SpeedMathGame({
     setSelectedAnswer(answer);
     setHintActive(false);
     
-    setTimeout(() => {
+    schedule(() => {
       setShowResult(true);
+      const answeredCorrectly = answer === correctAnswer;
+      const nextLives = answeredCorrectly
+        ? internalLives
+        : internalLives - 1;
       
-      if (answer === correctAnswer) {
+      if (answeredCorrectly) {
         sfx.correct(soundEnabled);
         setCorrectCount(prev => prev + 1);
         setInternalScore(prev => prev + 100 * difficultyMultiplier(difficulty));
       } else {
         sfx.wrong(soundEnabled);
-        setInternalLives(prev => prev - 1);
+        setInternalLives(nextLives);
       }
       
       // Move to next question or end game
-      setTimeout(() => {
+      const isLastQuestion = currentIndex >= equations.length - 1;
+      if (nextLives <= 0 || isLastQuestion) completedRef.current = true;
+      schedule(() => {
+        if (nextLives <= 0) {
+          onComplete({
+            score: internalScore,
+            won: false,
+            timeMs: Math.max(0, timeLimit - timeLeft),
+            difficulty,
+            accuracy: correctCount / equations.length,
+          });
+          setCompleted(true);
+          return;
+        }
         if (currentIndex < equations.length - 1) {
           setCurrentIndex(prev => prev + 1);
           setSelectedAnswer(null);
           setShowResult(false);
         } else {
           // Game completed
-          const timeMs = Date.now() - startTime;
+          const timeMs = Math.max(0, timeLimit - timeLeft);
           onComplete({
-            score: internalScore + (answer === correctAnswer ? 100 * difficultyMultiplier(difficulty) : 0),
+            score: internalScore + (answeredCorrectly ? 100 * difficultyMultiplier(difficulty) : 0),
             won: true,
             timeMs,
             difficulty,
-            accuracy: (correctCount + (answer === correctAnswer ? 1 : 0)) / equations.length
+            accuracy: (correctCount + (answeredCorrectly ? 1 : 0)) / equations.length
           });
           setCompleted(true);
         }
       }, 1000);
     }, 300);
-  }, [paused, completed, showResult, soundEnabled, correctAnswer, difficulty, currentIndex, equations.length, startTime, internalScore, correctCount, onComplete]);
-
-  // Check for game over (lives)
-  useEffect(() => {
-    if (internalLives <= 0) {
-      const timeMs = Date.now() - startTime;
-      onComplete({
-        score: internalScore,
-        won: false,
-        timeMs,
-        difficulty,
-        accuracy: correctCount / equations.length
-      });
-      setCompleted(true);
-    }
-  }, [internalLives, internalScore, correctCount, startTime, difficulty, onComplete, equations.length]);
+  }, [paused, completed, showResult, soundEnabled, correctAnswer, difficulty, currentIndex, equations.length, internalScore, internalLives, correctCount, onComplete, schedule, timeLeft, timeLimit]);
 
   // Timer countdown
   useEffect(() => {
+    if (paused || completed) return;
     const timer = setInterval(() => {
       setTimeLeft(prev => {
-        if (prev <= 100) {
+        if (completedRef.current) return prev;
+        if (prev <= 100 && !completedRef.current) {
           clearInterval(timer);
-          const actualTime = timeLimit - (Date.now() - startTime);
+          completedRef.current = true;
           onComplete({
             score: internalScore,
             won: false,
-            timeMs: actualTime,
+            timeMs: timeLimit,
             difficulty,
             accuracy: correctCount / equations.length
           });
@@ -519,7 +525,7 @@ export function SpeedMathGame({
     }, 100);
     
     return () => clearInterval(timer);
-  }, [timeLimit, startTime, internalScore, correctCount, equations.length, difficulty, onComplete]);
+  }, [paused, completed, timeLimit, internalScore, correctCount, equations.length, difficulty, onComplete]);
 
   // Keyboard controls listener (1, 2, 3, 4)
   useEffect(() => {

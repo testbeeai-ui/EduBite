@@ -5,12 +5,13 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, RoundedBox, Text } from "@react-three/drei";
 import * as THREE from "three";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
-import { shuffle, pickRandom, range } from "@/lib/brain-gym/utils/shuffle";
+import { shuffle, pickRandom } from "@/lib/brain-gym/utils/shuffle";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
-import { GameBoard, StatusLine, CellButton } from "./_shared";
+import { GameBoard } from "./_shared";
 import { cn } from "@/lib/utils";
 import { GAMES } from "@/data/brain-gym/registry";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 // 3D shape configurations for shadow matching
 const SHAPES = [
@@ -703,11 +704,14 @@ export function MatchShadowGame({
   }, []);
 
   const [currentRound, setCurrentRound] = useState(0);
+  const [correctRounds, setCorrectRounds] = useState(0);
   const [internalScore, setInternalScore] = useState(0);
   const [selectedShape, setSelectedShape] = useState<string | null>(null);
   const [revealAnswer, setRevealAnswer] = useState(false);
   const [internalLives, setInternalLives] = useState(lives);
   const [startTime, setStartTime] = useState(() => Date.now());
+  const completedRef = useRef(false);
+  const { schedule } = usePausableScheduler(paused);
 
   // Hint states
   const [hintActive, setHintActive] = useState(false);
@@ -726,6 +730,7 @@ export function MatchShadowGame({
   // Reset game when restartKey changes
   useEffect(() => {
     setCurrentRound(0);
+    setCorrectRounds(0);
     setInternalScore(0);
     setSelectedShape(null);
     setRevealAnswer(false);
@@ -733,6 +738,7 @@ export function MatchShadowGame({
     setStartTime(Date.now());
     setHintActive(false);
     setHintsUsed(0);
+    completedRef.current = false;
   }, [restartKey, lives]);
 
   // Reset hint when round changes
@@ -742,6 +748,7 @@ export function MatchShadowGame({
 
   // Generate options for current round
   const [options, correctShape] = useMemo(() => {
+    void currentRound;
     // Filter shapes based on difficulty: easy gets simpler shapes
     const eligibleShapes = difficulty === "easy"
       ? SHAPES.filter(s => ["sphere", "cube", "cylinder", "cone", "torus"].includes(s.id))
@@ -755,12 +762,19 @@ export function MatchShadowGame({
   }, [currentRound, numOptions, difficulty]);
 
   const handleSelect = (shapeId: string) => {
-    if (paused || selectedShape !== null || revealAnswer) return;
+    if (
+      paused ||
+      completedRef.current ||
+      selectedShape !== null ||
+      revealAnswer
+    ) {
+      return;
+    }
     
     sfx.tap(soundEnabled);
     setSelectedShape(shapeId);
     
-    setTimeout(() => {
+    schedule(() => {
       if (shapeId === correctShape) {
         // Correct answer
         sfx.correct(soundEnabled);
@@ -768,26 +782,24 @@ export function MatchShadowGame({
         setInternalScore(newScore);
         
         // Next round after delay
-        setTimeout(() => {
+        schedule(() => {
           setSelectedShape(null);
+          setCorrectRounds((rounds) => rounds + 1);
           setCurrentRound(prev => prev + 1);
           setRevealAnswer(false);
         }, 1000);
       } else {
         // Wrong answer
         sfx.wrong(soundEnabled);
-        setInternalLives(prev => prev - 1);
+        const nextLives = internalLives - 1;
+        setInternalLives(nextLives);
         setRevealAnswer(true);
         
         // Show correct answer, then next round
-        setTimeout(() => {
+        schedule(() => {
           setSelectedShape(null);
           setRevealAnswer(false);
-          if (internalLives <= 1) {
-            // Game over
-            const timeMs = Date.now() - startTime;
-            onComplete({ score: internalScore, won: false, timeMs, difficulty });
-          } else {
+          if (nextLives > 0) {
             setCurrentRound(prev => prev + 1);
           }
         }, 2000);
@@ -805,16 +817,18 @@ export function MatchShadowGame({
   useEffect(() => {
     // Check for win condition (complete several rounds)
     const roundsToWin = difficulty === "easy" ? 5 : difficulty === "medium" ? 7 : 10;
-    if (currentRound >= roundsToWin) {
+    if (correctRounds >= roundsToWin && !completedRef.current) {
+      completedRef.current = true;
       const timeMs = Date.now() - startTime;
       onScoreChange?.(internalScore);
       onComplete({ score: internalScore, won: true, timeMs, difficulty });
     }
-  }, [currentRound, internalScore, difficulty, startTime, onComplete, onScoreChange]);
+  }, [correctRounds, internalScore, difficulty, startTime, onComplete, onScoreChange]);
 
   useEffect(() => {
     // Check for game over
-    if (internalLives <= 0) {
+    if (internalLives <= 0 && !completedRef.current) {
+      completedRef.current = true;
       const timeMs = Date.now() - startTime;
       onComplete({ score: internalScore, won: false, timeMs, difficulty });
     }
@@ -824,7 +838,7 @@ export function MatchShadowGame({
     <GameBoard>
       <div className="flex justify-between items-center mb-2 px-1">
         <p className="text-sm text-[var(--text-dim)] font-display font-bold leading-none">
-          Score: {internalScore} · Lives: {internalLives} · Round: {currentRound + 1}
+          Score: {internalScore} · Lives: {internalLives} · Correct: {correctRounds}
         </p>
         <button
           onClick={handleHint}

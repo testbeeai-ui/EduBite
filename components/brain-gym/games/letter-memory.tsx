@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
 import { GameBoard, StatusLine } from "./_shared";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 const LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
@@ -25,6 +26,8 @@ export function LetterMemoryGame({
   const [score, setScore] = useState(0);
   const [round, setRound] = useState(1);
   const [start] = useState(() => Date.now());
+  const completedRef = useRef(false);
+  const { schedule } = usePausableScheduler(paused);
 
   const make = (n: number) =>
     Array.from({ length: n }, () => LETTERS[Math.floor(Math.random() * LETTERS.length)]!);
@@ -34,17 +37,20 @@ export function LetterMemoryGame({
     setAnswer("");
     let i = 0;
     setDisplay(s[0]!);
-    const id = window.setInterval(() => {
-      i++;
-      if (i >= s.length) {
-        clearInterval(id);
-        setDisplay("?");
-        setPhase("input");
-        return;
-      }
-      setDisplay(s[i]!);
-      sfx.tick(soundEnabled);
-    }, difficulty === "hard" ? 450 : 700);
+    const nextLetter = () => {
+      schedule(() => {
+        i++;
+        if (i >= s.length) {
+          setDisplay("?");
+          setPhase("input");
+          return;
+        }
+        setDisplay(s[i]!);
+        sfx.tick(soundEnabled);
+        nextLetter();
+      }, difficulty === "hard" ? 450 : 700);
+    };
+    nextLetter();
   };
 
   useEffect(() => {
@@ -55,28 +61,30 @@ export function LetterMemoryGame({
   }, []);
 
   const submit = () => {
-    if (paused || phase !== "input") return;
+    if (paused || phase !== "input" || completedRef.current) return;
     if (answer.toUpperCase().replace(/\s/g, "") === seq.join("")) {
       sfx.correct(soundEnabled);
       const ns = score + Math.round(50 * difficultyMultiplier(difficulty) * round);
       setScore(ns);
       onScoreChange?.(ns);
       if (round >= 5) {
+        completedRef.current = true;
         onComplete({ score: ns, won: true, timeMs: Date.now() - start, difficulty });
         return;
       }
       const s = make(len + (round >= 3 ? 1 : 0));
       setSeq(s);
       setRound((r) => r + 1);
-      setTimeout(() => flash(s), 300);
+      schedule(() => flash(s), 300);
     } else {
       sfx.wrong(soundEnabled);
       const nl = lives - 1;
       setLives(nl);
       onLivesChange?.(nl);
       if (nl <= 0) {
+        completedRef.current = true;
         onComplete({ score, won: false, timeMs: Date.now() - start, difficulty });
-      } else setTimeout(() => flash(seq), 300);
+      } else schedule(() => flash(seq), 300);
     }
   };
 

@@ -5,13 +5,78 @@ import {
   normalizeBrainGymProgress,
 } from "@/lib/db/normalize";
 import {
-  applyBrainGymSession,
+  applyBrainGymMutation,
   readNormalizedBrainGym,
-  writeNormalizedBrainGym,
 } from "@/lib/db/supabase-progress";
-import type { BrainGymProgress } from "@/lib/brain-gym/types";
+import { GAMES } from "@/data/brain-gym/registry";
+import type {
+  BrainGymMutation,
+  BrainGymProgress,
+  Difficulty,
+  GameId,
+} from "@/lib/brain-gym/types";
 
 export const runtime = "nodejs";
+
+const GAME_IDS = new Set<GameId>(GAMES.map((game) => game.id));
+const DIFFICULTIES = new Set<Difficulty>(["easy", "medium", "hard"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseMutation(raw: unknown): BrainGymMutation | null {
+  if (!isRecord(raw) || typeof raw.type !== "string") return null;
+  if (raw.type === "initialize") return { type: "initialize" };
+  if (raw.type === "sound" && typeof raw.enabled === "boolean") {
+    return { type: "sound", enabled: raw.enabled };
+  }
+  if (
+    raw.type === "favorite" &&
+    GAME_IDS.has(raw.gameId as GameId) &&
+    typeof raw.favorite === "boolean"
+  ) {
+    return {
+      type: "favorite",
+      gameId: raw.gameId as GameId,
+      favorite: raw.favorite,
+    };
+  }
+  if (
+    raw.type !== "session" ||
+    typeof raw.sessionId !== "string" ||
+    !/^[0-9a-f-]{36}$/i.test(raw.sessionId) ||
+    !GAME_IDS.has(raw.gameId as GameId) ||
+    !isRecord(raw.result) ||
+    !DIFFICULTIES.has(raw.result.difficulty as Difficulty) ||
+    typeof raw.result.won !== "boolean" ||
+    typeof raw.result.score !== "number" ||
+    !Number.isFinite(raw.result.score) ||
+    raw.result.score < 0 ||
+    raw.result.score > 1_000_000 ||
+    typeof raw.result.timeMs !== "number" ||
+    !Number.isFinite(raw.result.timeMs) ||
+    raw.result.timeMs < 0 ||
+    raw.result.timeMs > 86_400_000 ||
+    typeof raw.isDaily !== "boolean" ||
+    !isRecord(raw.baseProgress)
+  ) {
+    return null;
+  }
+  return {
+    type: "session",
+    sessionId: raw.sessionId,
+    gameId: raw.gameId as GameId,
+    result: {
+      score: raw.result.score,
+      won: raw.result.won,
+      timeMs: raw.result.timeMs,
+      difficulty: raw.result.difficulty as Difficulty,
+    },
+    isDaily: raw.isDaily,
+    baseProgress: normalizeBrainGymProgress(raw.baseProgress),
+  };
+}
 
 export async function GET() {
   try {
@@ -52,16 +117,17 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Missing progress" }, { status: 400 });
     }
 
-    const reward = (body as {
-      reward?: { claimId?: string; rdmDelta?: number };
-    })?.reward;
+    const mutation = parseMutation(
+      (body as { mutation?: unknown })?.mutation,
+    );
+    if (!mutation) {
+      return NextResponse.json({ error: "Invalid mutation" }, { status: 400 });
+    }
 
-    const result = await applyBrainGymSession(
+    const result = await applyBrainGymMutation(
       user.id,
       normalizeBrainGymProgress(progress),
-      reward?.claimId && typeof reward.rdmDelta === "number"
-        ? { claimId: reward.claimId, rdmDelta: reward.rdmDelta }
-        : null,
+      mutation,
     );
 
     return NextResponse.json({
@@ -75,6 +141,9 @@ export async function PUT(request: Request) {
     const message = err instanceof Error ? err.message : "Server error";
     if (message === "Payload too large") {
       return NextResponse.json({ error: message }, { status: 413 });
+    }
+    if (message.includes("difficulty mastered")) {
+      return NextResponse.json({ error: message }, { status: 409 });
     }
     console.error("[api/progress/brain-gym PUT]", err);
     return NextResponse.json({ error: message }, { status: 500 });

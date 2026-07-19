@@ -2,6 +2,8 @@ export type GameCategory = "memory" | "logic" | "visual" | "speed";
 
 export type Difficulty = "easy" | "medium" | "hard";
 
+export type DifficultyWins = Record<Difficulty, number>;
+
 export type GameId =
   | "sequence-memory"
   | "pattern-memory"
@@ -47,6 +49,7 @@ export interface GameScoreEntry {
 export interface GameStats {
   plays: number;
   wins: number;
+  winsByDifficulty: DifficultyWins;
   bestScore: number;
   bestTimeMs?: number;
   lastPlayed?: string;
@@ -62,7 +65,7 @@ export interface BadgeDef {
 }
 
 export interface BrainGymProgress {
-  version: 1;
+  version: 2;
   soundEnabled: boolean;
   darkMode: boolean;
   streak: number;
@@ -92,6 +95,19 @@ export interface GameSessionResult {
   accuracy?: number;
   extra?: Record<string, number | string>;
 }
+
+export type BrainGymMutation =
+  | { type: "initialize" }
+  | { type: "sound"; enabled: boolean }
+  | { type: "favorite"; gameId: GameId; favorite: boolean }
+  | {
+      type: "session";
+      sessionId: string;
+      gameId: GameId;
+      result: GameSessionResult;
+      isDaily: boolean;
+      baseProgress: BrainGymProgress;
+    };
 
 export interface GameComponentProps {
   difficulty: Difficulty;

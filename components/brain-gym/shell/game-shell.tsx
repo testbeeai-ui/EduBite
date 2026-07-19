@@ -9,7 +9,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { GAME_MAP } from "@/data/brain-gym/registry";
 import { useBrainGym } from "@/lib/brain-gym/hooks/use-brain-gym";
 import type {
@@ -21,6 +21,9 @@ import { formatMsAsClock, formatTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { sfx } from "@/lib/brain-gym/utils/sound";
+import {
+  isDifficultyLocked,
+} from "@/lib/brain-gym/storage";
 
 export function GameShell({
   Game,
@@ -47,6 +50,11 @@ export function GameShell({
   const [lives, setLives] = useState(meta?.maxLives ?? 0);
   const [restartKey, setRestartKey] = useState(0);
   const [elapsed, setElapsed] = useState(0);
+  const completionHandledRef = useRef(false);
+  const elapsedRef = useRef(0);
+  const pausedRef = useRef(false);
+  const activeRunKeyRef = useRef(0);
+  const shellActiveRef = useRef(true);
 
   useEffect(() => {
     setPhase("intro");
@@ -55,14 +63,51 @@ export function GameShell({
     setLives(meta?.maxLives ?? 0);
     setRestartKey(0);
     setElapsed(0);
+    elapsedRef.current = 0;
+    pausedRef.current = false;
+    completionHandledRef.current = false;
+    activeRunKeyRef.current = 0;
     clearLastResult();
   }, [activeGameId, meta?.maxLives, clearLastResult]);
 
   useEffect(() => {
+    shellActiveRef.current = true;
+    return () => {
+      shellActiveRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (phase !== "play" || paused) return;
-    const id = window.setInterval(() => setElapsed((e) => e + 1000), 1000);
+    const id = window.setInterval(
+      () =>
+        setElapsed((value) => {
+          const next = value + 1000;
+          elapsedRef.current = next;
+          return next;
+        }),
+      1000,
+    );
     return () => window.clearInterval(id);
   }, [phase, paused]);
+
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
+
+  useEffect(() => {
+    if (
+      !activeGameId ||
+      !isDifficultyLocked(progress, activeGameId, difficulty)
+    ) {
+      return;
+    }
+    const fallback = (["easy", "medium", "hard"] as Difficulty[]).find(
+      (candidate) =>
+        !isDifficultyLocked(progress, activeGameId, candidate),
+    );
+    if (fallback && fallback !== difficulty) setDifficulty(fallback);
+  }, [activeGameId, difficulty, progress, setDifficulty]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -73,17 +118,31 @@ export function GameShell({
   }, []);
 
   const onComplete = useCallback(
-    (result: GameSessionResult) => {
+    (result: GameSessionResult, runKey: number) => {
+      if (
+        !shellActiveRef.current ||
+        runKey !== activeRunKeyRef.current ||
+        completionHandledRef.current ||
+        pausedRef.current
+      ) {
+        return;
+      }
+      completionHandledRef.current = true;
       if (result.won) sfx.win(progress.soundEnabled);
       else sfx.lose(progress.soundEnabled);
       completeSession({
         ...result,
         difficulty: result.difficulty || difficulty,
-        timeMs: result.timeMs || elapsed,
+        timeMs: elapsedRef.current,
       });
       setPhase("result");
     },
-    [completeSession, difficulty, elapsed, progress.soundEnabled],
+    [completeSession, difficulty, progress.soundEnabled],
+  );
+
+  const gameOnComplete = useCallback(
+    (result: GameSessionResult) => onComplete(result, restartKey),
+    [onComplete, restartKey],
   );
 
   const requestClose = useCallback(() => {
@@ -105,6 +164,27 @@ export function GameShell({
   }, [requestClose]);
 
   if (!meta || !activeGameId) return null;
+  const difficultyLocked = isDifficultyLocked(
+    progress,
+    activeGameId,
+    difficulty,
+  );
+  const startRun = () => {
+    if (difficultyLocked) return;
+    completionHandledRef.current = false;
+    setElapsed(0);
+    elapsedRef.current = 0;
+    setScore(0);
+    setLives(meta.maxLives ?? 0);
+    setPaused(false);
+    setRestartKey((key) => {
+      const next = key + 1;
+      activeRunKeyRef.current = next;
+      return next;
+    });
+    clearLastResult();
+    setPhase("play");
+  };
 
   return (
     <AnimatePresence>
@@ -175,7 +255,7 @@ export function GameShell({
                 {/* Hearts / Lives Badge */}
                 {meta.hasLives && (
                   <div className="flex h-9 items-center justify-center px-3.5 rounded-full bg-[rgba(244,114,182,0.06)] border border-pink-500/20 text-pink-400 font-mono text-sm tracking-widest">
-                    {Array.from({ length: Math.max(0, lives) }, (_, i) => "💖").join("")}
+                    {"💖".repeat(Math.max(0, lives))}
                     {lives <= 0 ? "💀" : ""}
                   </div>
                 )}
@@ -220,16 +300,9 @@ export function GameShell({
                 {/* Restart Button */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setScore(0);
-                    setLives(meta.maxLives ?? 0);
-                    setElapsed(0);
-                    setPaused(false);
-                    setRestartKey((k) => k + 1);
-                    setPhase("play");
-                    clearLastResult();
-                  }}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--surface-2)] text-[var(--text-dim)] hover:text-white hover:bg-[var(--surface)] transition-all cursor-pointer"
+                  onClick={startRun}
+                  disabled={difficultyLocked}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--surface-2)] text-[var(--text-dim)] hover:text-white hover:bg-[var(--surface)] transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   aria-label="Restart"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -252,34 +325,56 @@ export function GameShell({
                   
                   {/* Difficulty selector */}
                   <div className="flex items-center gap-2.5 mb-7">
-                    {(["easy", "medium", "hard"] as Difficulty[]).map((d) => (
-                      <button
-                        key={d}
-                        type="button"
-                        onClick={() => setDifficulty(d)}
-                        className={cn(
-                          "px-4 py-2 rounded-full text-xs font-display font-semibold border capitalize transition-all duration-150 cursor-pointer select-none",
-                          difficulty === d
-                            ? "border-[#2DD4BF] bg-[rgba(45,212,191,0.18)] text-white shadow-[0_0_12px_rgba(45,212,191,0.15)] font-bold"
-                            : "border-[var(--line)] bg-[rgba(29,34,48,0.4)] text-[var(--text-dim)] hover:text-white hover:border-teal/30",
-                        )}
-                      >
-                        {d}
-                      </button>
-                    ))}
+                    {(["easy", "medium", "hard"] as Difficulty[]).map((d) => {
+                      const locked = isDifficultyLocked(
+                        progress,
+                        activeGameId,
+                        d,
+                      );
+                      return (
+                        <span key={d} className="group relative">
+                          <button
+                            type="button"
+                            disabled={locked}
+                            aria-label={
+                              locked
+                                ? `${d} difficulty mastered`
+                                : `${d} difficulty`
+                            }
+                            onClick={() => {
+                              if (!locked) setDifficulty(d);
+                            }}
+                            className={cn(
+                              "px-4 py-2 rounded-full text-xs font-display font-semibold border capitalize transition-all duration-150 cursor-pointer select-none disabled:cursor-not-allowed disabled:opacity-55",
+                              locked
+                                ? "border-amber/30 bg-amber/10 text-amber"
+                                : difficulty === d
+                                  ? "border-[#2DD4BF] bg-[rgba(45,212,191,0.18)] text-white shadow-[0_0_12px_rgba(45,212,191,0.15)] font-bold"
+                                  : "border-[var(--line)] bg-[rgba(29,34,48,0.4)] text-[var(--text-dim)] hover:text-white hover:border-teal/30",
+                            )}
+                          >
+                            {d}
+                          </button>
+                          {locked && (
+                            <span
+                              role="tooltip"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-52 -translate-x-1/2 rounded-lg border border-amber/25 bg-[var(--surface-2)] px-3 py-2 text-center text-[11px] normal-case text-[var(--text-dim)] shadow-xl group-hover:block"
+                            >
+                              You&apos;ve mastered this level — you&apos;re
+                              excellent at this game. Try another difficulty.
+                            </span>
+                          )}
+                        </span>
+                      );
+                    })}
                   </div>
 
                   {/* Start Button */}
                   <button
                     type="button"
-                    onClick={() => {
-                      setElapsed(0);
-                      setScore(0);
-                      setLives(meta.maxLives ?? 0);
-                      setRestartKey((k) => k + 1);
-                      setPhase("play");
-                    }}
-                    className="w-full py-[14px] rounded-full bg-gradient-to-r from-[var(--teal)] to-[var(--blue)] text-[#04141c] hover:brightness-[1.08] hover:-translate-y-[1px] shadow-[0_8px_24px_rgba(45,212,191,0.2)] transition-all font-display font-bold text-base cursor-pointer select-none"
+                    onClick={startRun}
+                    disabled={difficultyLocked}
+                    className="w-full py-[14px] rounded-full bg-gradient-to-r from-[var(--teal)] to-[var(--blue)] text-[#04141c] hover:brightness-[1.08] hover:-translate-y-[1px] shadow-[0_8px_24px_rgba(45,212,191,0.2)] transition-all font-display font-bold text-base cursor-pointer select-none disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Start playing
                   </button>
@@ -300,7 +395,7 @@ export function GameShell({
                     key={restartKey}
                     difficulty={difficulty}
                     soundEnabled={progress.soundEnabled}
-                    onComplete={onComplete}
+                    onComplete={gameOnComplete}
                     onScoreChange={setScore}
                     onLivesChange={setLives}
                     paused={paused}
@@ -339,16 +434,11 @@ export function GameShell({
                   )}
                   <div className="flex flex-col sm:flex-row gap-2 justify-center pt-2">
                     <Button
-                      onClick={() => {
-                        setElapsed(0);
-                        setScore(0);
-                        setLives(meta.maxLives ?? 0);
-                        setRestartKey((k) => k + 1);
-                        clearLastResult();
-                        setPhase("play");
-                      }}
+                      onClick={
+                        difficultyLocked ? () => setPhase("intro") : startRun
+                      }
                     >
-                      Play again
+                      {difficultyLocked ? "Choose another level" : "Play again"}
                     </Button>
                     <Button variant="ghost" onClick={closeGame}>
                       Close

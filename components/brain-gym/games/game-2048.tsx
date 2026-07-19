@@ -108,8 +108,7 @@ export function Game2048({
   paused,
   restartKey,
 }: GameComponentProps) {
-  const target =
-    difficulty === "easy" ? 512 : difficulty === "medium" ? 1024 : 2048;
+  const target = 2048;
 
   const [board, setBoard] = useState<Board>(() => spawn(spawn(empty())));
   const [score, setScore] = useState(0);
@@ -120,6 +119,7 @@ export function Game2048({
 
   const boardRef = useRef(board);
   const scoreRef = useRef(score);
+  const completedRef = useRef(false);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -139,6 +139,7 @@ export function Game2048({
     setWon(false);
     setLost(false);
     setFinished(false);
+    completedRef.current = false;
     onScoreChange?.(0);
   }, [onScoreChange]);
 
@@ -148,7 +149,8 @@ export function Game2048({
 
   const finish = useCallback(
     (didWin: boolean, finalScore: number) => {
-      if (finished) return;
+      if (completedRef.current) return;
+      completedRef.current = true;
       setFinished(true);
       onComplete({
         score: Math.round(finalScore * difficultyMultiplier(difficulty)),
@@ -157,7 +159,7 @@ export function Game2048({
         difficulty,
       });
     },
-    [finished, onComplete, difficulty, start],
+    [onComplete, difficulty, start],
   );
 
   const apply = useCallback(

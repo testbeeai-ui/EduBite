@@ -5,6 +5,7 @@ import { pickWithSeed } from "@/lib/brain-gym/utils/shuffle";
 import type {
   BrainGymProgress,
   Difficulty,
+  DifficultyWins,
   GameId,
   GameStats,
 } from "@/lib/brain-gym/types";
@@ -27,7 +28,7 @@ import { todayKey } from "@/lib/utils";
 function createDefaultBrainGymProgress(): BrainGymProgress {
   const today = todayKey();
   return {
-    version: 1,
+    version: 2,
     soundEnabled: true,
     darkMode: true,
     streak: 0,
@@ -272,15 +273,25 @@ function normalizeGameStats(raw: unknown): GameStats {
     return {
       plays: 0,
       wins: 0,
+      winsByDifficulty: { easy: 0, medium: 0, hard: 0 },
       bestScore: 0,
       recentScores: [],
       favorite: false,
     };
   }
   const recent = Array.isArray(raw.recentScores) ? raw.recentScores : [];
+  const rawDifficultyWins = isRecord(raw.winsByDifficulty)
+    ? raw.winsByDifficulty
+    : {};
+  const winsByDifficulty: DifficultyWins = {
+    easy: Math.max(0, Math.floor(asNumber(rawDifficultyWins.easy, 0))),
+    medium: Math.max(0, Math.floor(asNumber(rawDifficultyWins.medium, 0))),
+    hard: Math.max(0, Math.floor(asNumber(rawDifficultyWins.hard, 0))),
+  };
   return {
     plays: Math.max(0, Math.floor(asNumber(raw.plays, 0))),
     wins: Math.max(0, Math.floor(asNumber(raw.wins, 0))),
+    winsByDifficulty,
     bestScore: Math.max(0, Math.floor(asNumber(raw.bestScore, 0))),
     bestTimeMs:
       typeof raw.bestTimeMs === "number" && Number.isFinite(raw.bestTimeMs)
@@ -343,7 +354,7 @@ export function normalizeBrainGymProgress(raw: unknown): BrainGymProgress {
     .filter((id): id is GameId => id !== null);
 
   return {
-    version: 1,
+    version: 2,
     soundEnabled: asBoolean(raw.soundEnabled, true),
     darkMode: asBoolean(raw.darkMode, true),
     streak: Math.max(0, Math.floor(asNumber(raw.streak, 0))),
@@ -373,13 +384,21 @@ export function normalizePuzzleProgress(raw: unknown): PuzzleProgress {
     attempts[dateKey] = {
       puzzleId: asString(value.puzzleId, ""),
       dateKey: asString(value.dateKey, dateKey),
+      responseType: value.responseType === "mcq" ? "mcq" : "open-ended",
       note: asString(value.note, "").slice(0, 8000),
+      selectedOptionIndex:
+        typeof value.selectedOptionIndex === "number" &&
+        Number.isInteger(value.selectedOptionIndex) &&
+        value.selectedOptionIndex >= 0 &&
+        value.selectedOptionIndex <= 3
+          ? value.selectedOptionIndex
+          : null,
       submittedAt: asString(value.submittedAt, new Date().toISOString()),
     };
   }
 
   return {
-    version: 1,
+    version: 2,
     attempts,
     streak: Math.max(0, Math.floor(asNumber(raw.streak, 0))),
     lastAttemptDate:

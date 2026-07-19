@@ -14,6 +14,7 @@ import { difficultyMultiplier } from "@/lib/brain-gym/storage";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { cn } from "@/lib/utils";
 import { ChoiceButton, ChoiceGrid, GameBoard, StatusLine } from "./_shared";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 type Phase = "reading" | "question" | "feedback";
 
@@ -47,7 +48,6 @@ export function RecallReaderGame({
   const [readingMsLeft, setReadingMsLeft] = useState(RECALL_READER_READING_MS);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [answerStartedAt, setAnswerStartedAt] = useState(0);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(RECALL_READER_MAX_LIVES);
 
@@ -56,16 +56,16 @@ export function RecallReaderGame({
   const scoreRef = useRef(0);
   const livesRef = useRef(RECALL_READER_MAX_LIVES);
   const correctCountRef = useRef(0);
-  const feedbackTimeoutRef = useRef<number | null>(null);
+  const feedbackCancelRef = useRef<(() => void) | null>(null);
+  const answerElapsedRef = useRef(0);
+  const { schedule } = usePausableScheduler(paused);
 
   const current = items[roundIndex] ?? items[0];
   const multiplier = difficultyMultiplier(difficulty);
 
   const clearFeedbackTimeout = useCallback(() => {
-    if (feedbackTimeoutRef.current !== null) {
-      window.clearTimeout(feedbackTimeoutRef.current);
-      feedbackTimeoutRef.current = null;
-    }
+    feedbackCancelRef.current?.();
+    feedbackCancelRef.current = null;
   }, []);
 
   const finish = useCallback(
@@ -89,13 +89,13 @@ export function RecallReaderGame({
     scoreRef.current = 0;
     livesRef.current = RECALL_READER_MAX_LIVES;
     correctCountRef.current = 0;
+    answerElapsedRef.current = 0;
     setItems(createRecallReaderSession(sessionSeed(restartKey), difficulty));
     setRoundIndex(0);
     setPhase("reading");
     setReadingMsLeft(RECALL_READER_READING_MS);
     setSelectedIndex(null);
     setFeedback(null);
-    setAnswerStartedAt(0);
     setScore(0);
     setLives(RECALL_READER_MAX_LIVES);
     onScoreChange?.(0);
@@ -121,7 +121,7 @@ export function RecallReaderGame({
         const next = Math.max(0, prev - elapsed);
         if (next === 0) {
           setPhase("question");
-          setAnswerStartedAt(Date.now());
+          answerElapsedRef.current = 0;
           sfx.tick(soundEnabled);
         }
         return next;
@@ -130,6 +130,14 @@ export function RecallReaderGame({
 
     return () => window.clearInterval(interval);
   }, [paused, phase, soundEnabled]);
+
+  useEffect(() => {
+    if (phase !== "question" || paused || completedRef.current) return;
+    const interval = window.setInterval(() => {
+      answerElapsedRef.current += 100;
+    }, 100);
+    return () => window.clearInterval(interval);
+  }, [paused, phase]);
 
   const moveToNextRound = useCallback(() => {
     clearFeedbackTimeout();
@@ -147,18 +155,17 @@ export function RecallReaderGame({
     setReadingMsLeft(RECALL_READER_READING_MS);
     setSelectedIndex(null);
     setFeedback(null);
-    setAnswerStartedAt(0);
   }, [clearFeedbackTimeout, finish, roundIndex]);
 
   const scheduleAfterFeedback = useCallback(
     (callback: () => void) => {
       clearFeedbackTimeout();
-      feedbackTimeoutRef.current = window.setTimeout(() => {
-        feedbackTimeoutRef.current = null;
+      feedbackCancelRef.current = schedule(() => {
+        feedbackCancelRef.current = null;
         callback();
       }, 1_200);
     },
-    [clearFeedbackTimeout],
+    [clearFeedbackTimeout, schedule],
   );
 
   const chooseAnswer = useCallback(
@@ -182,7 +189,7 @@ export function RecallReaderGame({
         const gained = scoreRecallReaderAnswer(
           difficulty,
           roundIndex + 1,
-          Math.max(0, Date.now() - answerStartedAt),
+          answerElapsedRef.current,
           multiplier,
         );
         const nextScore = scoreRef.current + gained;
@@ -222,7 +229,6 @@ export function RecallReaderGame({
       }
     },
     [
-      answerStartedAt,
       current,
       difficulty,
       finish,

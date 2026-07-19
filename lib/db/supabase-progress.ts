@@ -1,22 +1,20 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { BrainGymProgress } from "@/lib/brain-gym/types";
+import type {
+  BrainGymMutation,
+  BrainGymProgress,
+} from "@/lib/brain-gym/types";
 import {
   normalizeBrainGymProgress,
   normalizeGameState,
   normalizePuzzleProgress,
 } from "@/lib/db/normalize";
-import type { PuzzleProgress } from "@/lib/puzzles/types";
+import type { PuzzleAttempt, PuzzleProgress } from "@/lib/puzzles/types";
 import { createEdubiteSupabaseServer } from "@/lib/supabase/server";
 import type { GameState } from "@/lib/types";
 
 export const EDUBITE_GAME_STATE_TABLE = "edubite_game_state";
 export const EDUBITE_BRAIN_GYM_TABLE = "edubite_brain_gym_progress";
 export const EDUBITE_PUZZLE_TABLE = "edubite_puzzle_progress";
-
-type BrainGymRewardClaim = {
-  claimId: string;
-  rdmDelta: number;
-};
 
 async function sb(): Promise<SupabaseClient> {
   return createEdubiteSupabaseServer();
@@ -158,28 +156,26 @@ export async function readNormalizedPuzzleProgress(
   return normalizePuzzleProgress(data.payload as unknown);
 }
 
-export async function writeNormalizedPuzzleProgress(
-  userId: string,
-  progress: PuzzleProgress,
-): Promise<PuzzleProgress> {
-  const normalized = normalizePuzzleProgress(progress);
+export async function lockPuzzleAttempt(
+  _userId: string,
+  attempt: Omit<PuzzleAttempt, "submittedAt">,
+): Promise<{ progress: PuzzleProgress; inserted: boolean }> {
   const client = await sb();
-  const { error } = await client.from(EDUBITE_PUZZLE_TABLE).upsert(
-    {
-      user_id: userId,
-      payload: normalized,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" },
-  );
+  const { data, error } = await client.rpc("edubite_lock_puzzle_attempt", {
+    p_attempt: attempt,
+  });
   if (error) throw new Error(error.message);
-  return normalized;
+  const result = data as { progress?: unknown; inserted?: boolean };
+  return {
+    progress: normalizePuzzleProgress(result.progress),
+    inserted: result.inserted === true,
+  };
 }
 
-export async function applyBrainGymSession(
+export async function applyBrainGymMutation(
   _userId: string,
   progress: BrainGymProgress,
-  reward?: BrainGymRewardClaim | null,
+  mutation: BrainGymMutation,
 ): Promise<{
   progress: BrainGymProgress;
   gameState: GameState | null;
@@ -187,10 +183,9 @@ export async function applyBrainGymSession(
 }> {
   const normalizedProgress = normalizeBrainGymProgress(progress);
   const client = await sb();
-  const { data, error } = await client.rpc("edubite_apply_brain_gym_session", {
+  const { data, error } = await client.rpc("edubite_apply_brain_gym_mutation", {
     p_progress: normalizedProgress,
-    p_claim_id: reward?.claimId ?? null,
-    p_rdm_delta: reward?.rdmDelta ?? 0,
+    p_mutation: mutation,
   });
   if (error) throw new Error(error.message);
 

@@ -8,19 +8,10 @@ import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { shuffle, pickRandom, range } from "@/lib/brain-gym/utils/shuffle";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
-import { GameBoard } from "./_shared";
 import { cn } from "@/lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  HelpCircle,
-  Timer,
-  Star,
-  Trophy,
-  CheckCircle,
-  Eye,
-  RotateCcw,
-  Sparkles
-} from "lucide-react";
+import { motion } from "framer-motion";
+import { HelpCircle, Timer, Star } from "lucide-react";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 // Object types and their emoji representations
 const OBJECT_TYPES = [
@@ -31,7 +22,15 @@ const OBJECT_TYPES = [
   { id: "clock", name: "Clock", emoji: "⏰", color: "#9e9e9e" },
   { id: "book", name: "Book", emoji: "📚", color: "#8d6e63" },
   { id: "lightbulb", name: "Lightbulb", emoji: "💡", color: "#fff176" },
-  { id: "gift", name: "Gift", emoji: "🎁", color: "#ff5252" }
+  { id: "gift", name: "Gift", emoji: "🎁", color: "#ff5252" },
+  { id: "apple", name: "Apple", emoji: "🍎", color: "#ef4444" },
+  { id: "moon", name: "Moon", emoji: "🌙", color: "#f8fafc" },
+  { id: "umbrella", name: "Umbrella", emoji: "☂️", color: "#8b5cf6" },
+  { id: "camera", name: "Camera", emoji: "📷", color: "#94a3b8" },
+  { id: "bell", name: "Bell", emoji: "🔔", color: "#f59e0b" },
+  { id: "music", name: "Music", emoji: "🎵", color: "#ec4899" },
+  { id: "puzzle", name: "Puzzle", emoji: "🧩", color: "#22c55e" },
+  { id: "magnifier", name: "Magnifier", emoji: "🔍", color: "#38bdf8" }
 ];
 
 // Scene for hidden objects game
@@ -53,7 +52,7 @@ function HiddenObjectsScene({
     isTarget: boolean;
     found: boolean;
   }>;
-  selectedObjects: Set<string>;
+  selectedObjects: Set<number>;
   onSelect: (objectId: string, index: number) => void;
   disabled: boolean;
   hintActiveCell: number | null;
@@ -81,7 +80,7 @@ function HiddenObjectsScene({
       {/* Scene objects represented as Billboard Emojis */}
       {sceneObjects.map((obj, index) => {
         const isFound = obj.found;
-        const isSelected = selectedObjects.has(obj.type);
+        const isSelected = selectedObjects.has(index);
         const isHinted = index === hintActiveCell;
         
         // Target indicators: Hinted is double scaled, Found is dimmed
@@ -197,7 +196,7 @@ function HiddenObjects3D({
     isTarget: boolean;
     found: boolean;
   }>;
-  selectedObjects: Set<string>;
+  selectedObjects: Set<number>;
   onSelect: (objectId: string, index: number) => void;
   disabled: boolean;
   hintActiveCell: number | null;
@@ -231,12 +230,17 @@ export function HiddenObjectsGame({
   const [sceneObjects, targetObjects] = useMemo(() => {
     // Select targets randomly
     const targets = shuffle([...OBJECT_TYPES]).slice(0, numTargets).map(t => t.id);
+    const distractorTypes = OBJECT_TYPES.filter(
+      (objectType) => !targets.includes(objectType.id),
+    );
     
     // Generate objects distributed on a circular 3D plane
     const objects = range(numObjects).map((i) => {
       // Alternate picking targets and distractors to ensure targets exist
       const useTarget = i < numTargets;
-      const typeId = useTarget ? targets[i]! : pickRandom(OBJECT_TYPES).id;
+      const typeId = useTarget
+        ? targets[i]!
+        : pickRandom(distractorTypes).id;
       const objType = OBJECT_TYPES.find(o => o.id === typeId)!;
       
       const angle = (i / numObjects) * Math.PI * 2 + Math.random() * 0.4;
@@ -254,7 +258,7 @@ export function HiddenObjectsGame({
         ] as [number, number, number],
         rotation: [0, 0, 0] as [number, number, number],
         scale: [1, 1, 1] as [number, number, number],
-        isTarget: targets.includes(objType.id),
+        isTarget: useTarget,
         found: false
       };
     });
@@ -262,11 +266,12 @@ export function HiddenObjectsGame({
     return [objects, targets];
   }, [numObjects, numTargets]);
 
-  const [selectedObjects, setSelectedObjects] = useState<Set<string>>(new Set());
-  const [foundObjects, setFoundObjects] = useState<Set<string>>(new Set());
+  const [selectedObjects, setSelectedObjects] = useState<Set<number>>(new Set());
+  const [foundObjects, setFoundObjects] = useState<Set<number>>(new Set());
   const [timeLeft, setTimeLeft] = useState(timeLimit);
-  const [startTime, setStartTime] = useState(() => Date.now());
   const [internalScore, setInternalScore] = useState(0);
+  const completedRef = useRef(false);
+  const { schedule } = usePausableScheduler(paused);
 
   // Hints state
   const [hintsUsed, setHintsUsed] = useState(0);
@@ -282,8 +287,8 @@ export function HiddenObjectsGame({
     setSelectedObjects(new Set());
     setFoundObjects(new Set());
     setTimeLeft(timeLimit);
-    setStartTime(Date.now());
     setInternalScore(0);
+    completedRef.current = false;
     setHintsUsed(0);
     setHintActiveCell(null);
     sceneObjects.forEach(o => o.found = false);
@@ -295,8 +300,9 @@ export function HiddenObjectsGame({
     
     const timer = setInterval(() => {
       setTimeLeft(prev => {
-        if (prev <= 100) {
+        if (prev <= 100 && !completedRef.current) {
           clearInterval(timer);
+          completedRef.current = true;
           const score = foundObjects.size * 100;
           setInternalScore(score);
           onComplete({
@@ -316,8 +322,13 @@ export function HiddenObjectsGame({
 
   // Trigger win check
   useEffect(() => {
-    if (foundObjects.size > 0 && foundObjects.size === targetObjects.length) {
-      const elapsed = Date.now() - startTime;
+    if (
+      foundObjects.size > 0 &&
+      foundObjects.size === targetObjects.length &&
+      !completedRef.current
+    ) {
+      completedRef.current = true;
+      const elapsed = Math.max(0, timeLimit - timeLeft);
       const baseScore = targetObjects.length * 200;
       const timeBonus = Math.max(0, Math.round((timeLimit - elapsed) / 10));
       const finalScore = Math.round((baseScore + timeBonus) * difficultyMultiplier(difficulty));
@@ -325,20 +336,27 @@ export function HiddenObjectsGame({
       setInternalScore(finalScore);
       onComplete({ score: finalScore, won: true, timeMs: elapsed, difficulty });
     }
-  }, [foundObjects, targetObjects, timeLimit, startTime, difficulty, onComplete]);
+  }, [foundObjects, targetObjects, timeLimit, timeLeft, difficulty, onComplete]);
 
   // Handle object selection click
-  const handleSelect = (objectType: string, index: number) => {
-    if (paused || timeLeft <= 0 || foundObjects.has(objectType)) return;
+  const handleSelect = (_objectType: string, index: number) => {
+    if (
+      paused ||
+      completedRef.current ||
+      timeLeft <= 0 ||
+      foundObjects.has(index)
+    ) {
+      return;
+    }
     
     sfx.tap(soundEnabled);
-    const isTarget = targetObjects.includes(objectType);
+    const isTarget = sceneObjects[index]?.isTarget === true;
     
     if (isTarget) {
       // Correct Match
       sfx.correct(soundEnabled);
-      setFoundObjects(prev => new Set(prev).add(objectType));
-      setSelectedObjects(prev => new Set(prev).add(objectType));
+      setFoundObjects(prev => new Set(prev).add(index));
+      setSelectedObjects(prev => new Set(prev).add(index));
       
       // Update scene object found state
       if (sceneObjects[index]) {
@@ -355,10 +373,10 @@ export function HiddenObjectsGame({
     }
     
     // Clear selection visual indicator after delay
-    setTimeout(() => {
+    schedule(() => {
       setSelectedObjects(prev => {
         const newSet = new Set(prev);
-        newSet.delete(objectType);
+        newSet.delete(index);
         return newSet;
       });
     }, 400);
@@ -366,11 +384,19 @@ export function HiddenObjectsGame({
 
   // Trigger hint highlighting one unfound target
   const triggerHint = () => {
-    if (paused || timeLeft <= 0 || hintsUsed >= 2 || hintActiveCell !== null) return;
+    if (
+      paused ||
+      completedRef.current ||
+      timeLeft <= 0 ||
+      hintsUsed >= 2 ||
+      hintActiveCell !== null
+    ) {
+      return;
+    }
     
     // Find index of an unfound target object in the scene
     const targetIndex = sceneObjects.findIndex(
-      (obj) => targetObjects.includes(obj.type) && !obj.found
+      (obj, index) => obj.isTarget && !foundObjects.has(index)
     );
     
     if (targetIndex !== -1) {
@@ -379,7 +405,7 @@ export function HiddenObjectsGame({
       sfx.tap(soundEnabled);
       
       // Clear highlight after 4 seconds
-      setTimeout(() => {
+      schedule(() => {
         setHintActiveCell(null);
       }, 4000);
     }
@@ -463,9 +489,9 @@ export function HiddenObjectsGame({
               </span>
               
               <div className="flex flex-wrap gap-2.5 items-center justify-center py-2.5">
-                {targetObjects.map((target) => {
+                {targetObjects.map((target, targetOrder) => {
                   const obj = OBJECT_TYPES.find(o => o.id === target);
-                  const found = foundObjects.has(target);
+                  const found = foundObjects.has(targetOrder);
                   return (
                     <motion.div
                       key={target}

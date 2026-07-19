@@ -1,7 +1,9 @@
 import { GAMES } from "@/data/brain-gym/registry";
 import type {
+  BrainGymMutation,
   BrainGymProgress,
   Difficulty,
+  DifficultyWins,
   GameId,
   GameSessionResult,
   GameStats,
@@ -11,6 +13,40 @@ import { pickWithSeed } from "@/lib/brain-gym/utils/shuffle";
 import { todayKey, addDaysToKey } from "@/lib/utils";
 
 export const BRAIN_GYM_KEY = "edubite.braingym.v1";
+export const MASTERY_WIN_LIMIT = 5;
+
+export function emptyDifficultyWins(): DifficultyWins {
+  return { easy: 0, medium: 0, hard: 0 };
+}
+
+export function difficultyWinsFor(
+  progress: BrainGymProgress,
+  gameId: GameId,
+  difficulty: Difficulty,
+): number {
+  return progress.games[gameId]?.winsByDifficulty[difficulty] ?? 0;
+}
+
+export function isDifficultyLocked(
+  progress: BrainGymProgress,
+  gameId: GameId,
+  difficulty: Difficulty,
+): boolean {
+  if (difficulty === "hard") return false;
+  return difficultyWinsFor(progress, gameId, difficulty) >= MASTERY_WIN_LIMIT;
+}
+
+export function remainingMasteryWins(
+  progress: BrainGymProgress,
+  gameId: GameId,
+  difficulty: Difficulty,
+): number | null {
+  if (difficulty === "hard") return null;
+  return Math.max(
+    0,
+    MASTERY_WIN_LIMIT - difficultyWinsFor(progress, gameId, difficulty),
+  );
+}
 
 function scopedKey(userId: string): string {
   return `${BRAIN_GYM_KEY}:user:${userId}`;
@@ -20,6 +56,7 @@ function emptyStats(): GameStats {
   return {
     plays: 0,
     wins: 0,
+    winsByDifficulty: emptyDifficultyWins(),
     bestScore: 0,
     recentScores: [],
     favorite: false,
@@ -29,7 +66,7 @@ function emptyStats(): GameStats {
 export function createDefaultProgress(): BrainGymProgress {
   const today = todayKey();
   return {
-    version: 1,
+    version: 2,
     soundEnabled: true,
     darkMode: true,
     streak: 0,
@@ -98,11 +135,6 @@ function normalizeProgress(parsed: BrainGymProgress): BrainGymProgress {
   return merged;
 }
 
-export type BrainGymReward = {
-  claimId: string;
-  rdmDelta: number;
-};
-
 /**
  * Guests: ephemeral defaults.
  * Signed-in: Supabase via /api/progress/brain-gym (with one-time SQLite migrate).
@@ -131,7 +163,9 @@ export async function loadBrainGym(
     const legacy = readScopedLegacyLocal(userId);
     if (legacy) {
       const normalized = normalizeProgress(legacy);
-      const save = await saveBrainGym(userId, normalized);
+      const save = await saveBrainGym(userId, normalized, {
+        type: "initialize",
+      });
       if (save.ok) clearScopedLegacyLocal(userId);
       return normalized;
     }
@@ -147,13 +181,18 @@ export async function loadBrainGym(
 }
 
 export type BrainGymSaveResult =
-  | { ok: true; awarded: number; gameRdm: number | null }
+  | {
+      ok: true;
+      awarded: number;
+      gameRdm: number | null;
+      progress: BrainGymProgress;
+    }
   | { ok: false; error: string };
 
 export async function saveBrainGym(
   userId: string | null,
   progress: BrainGymProgress,
-  reward?: BrainGymReward | null,
+  mutation: BrainGymMutation,
 ): Promise<BrainGymSaveResult> {
   if (!userId) return { ok: false, error: "Not signed in" };
 
@@ -164,7 +203,7 @@ export async function saveBrainGym(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         progress: normalizeProgress(progress),
-        reward: reward ?? undefined,
+        mutation,
       }),
     });
     if (!res.ok) {
@@ -174,11 +213,13 @@ export async function saveBrainGym(
     }
     const data = (await res.json()) as {
       awarded?: number;
+      progress?: BrainGymProgress;
       gameState?: { rdm?: number } | null;
     };
     return {
       ok: true,
       awarded: typeof data.awarded === "number" ? data.awarded : 0,
+      progress: normalizeProgress(data.progress ?? progress),
       gameRdm:
         typeof data.gameState?.rdm === "number" ? data.gameState.rdm : null,
     };
@@ -218,6 +259,10 @@ export function applySessionResult(
   result: GameSessionResult,
   isDaily: boolean,
 ): { progress: BrainGymProgress; newBadges: string[]; rdmGain: number } {
+  if (isDifficultyLocked(progress, gameId, result.difficulty)) {
+    return { progress, newBadges: [], rdmGain: 0 };
+  }
+
   const today = todayKey();
   const prev = progress.games[gameId] ?? emptyStats();
   const entry = {
@@ -267,6 +312,11 @@ export function applySessionResult(
         ...prev,
         plays: prev.plays + 1,
         wins: prev.wins + (result.won ? 1 : 0),
+        winsByDifficulty: {
+          ...prev.winsByDifficulty,
+          [result.difficulty]:
+            prev.winsByDifficulty[result.difficulty] + (result.won ? 1 : 0),
+        },
         bestScore,
         bestTimeMs,
         lastPlayed: today,

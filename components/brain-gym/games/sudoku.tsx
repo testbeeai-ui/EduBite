@@ -1,10 +1,9 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
-import { GameBoard } from "./_shared";
 import { cn } from "@/lib/utils";
 import { shuffle } from "@/lib/brain-gym/utils/shuffle";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,6 +21,7 @@ import {
   Timer,
   AlertCircle
 } from "lucide-react";
+import { usePausableScheduler } from "./_pausable-scheduler";
 
 /** Helper to format milliseconds to mm:ss */
 function formatTime(ms: number): string {
@@ -94,6 +94,7 @@ export function SudokuGame({
   soundEnabled,
   onComplete,
   onScoreChange,
+  paused,
 }: GameComponentProps) {
   const blanks = difficulty === "easy" ? 6 : difficulty === "medium" ? 8 : 10;
 
@@ -107,7 +108,6 @@ export function SudokuGame({
   const [grid, setGrid] = useState<number[]>(init);
   const [fixed, setFixed] = useState<boolean[]>(() => init.map((v) => v !== 0));
   const [sel, setSel] = useState<number | null>(null);
-  const [start, setStart] = useState(() => Date.now());
   const [elapsedTime, setElapsedTime] = useState(0);
   const [mistakes, setMistakes] = useState(0);
   const [errorIndices, setErrorIndices] = useState<number[]>([]);
@@ -127,6 +127,8 @@ export function SudokuGame({
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [particles, setParticles] = useState<{ id: number; x: number; y: number; color: string; size: number }[]>([]);
   const [warningMsg, setWarningMsg] = useState<string | null>(null);
+  const completedRef = useRef(false);
+  const { schedule } = usePausableScheduler(paused);
 
   const maxMistakes = 3;
   const lives = Math.max(0, maxMistakes - mistakes);
@@ -136,7 +138,6 @@ export function SudokuGame({
     setGrid(init);
     setFixed(init.map((v) => v !== 0));
     setSel(null);
-    setStart(Date.now());
     setElapsedTime(0);
     setMistakes(0);
     setErrorIndices([]);
@@ -148,16 +149,17 @@ export function SudokuGame({
     setFinalScore(0);
     setShowStatsModal(false);
     setParticles([]);
+    completedRef.current = false;
   }, [init]);
 
   // Live Timer Effect
   useEffect(() => {
-    if (won || lost) return;
+    if (won || lost || paused) return;
     const timer = setInterval(() => {
-      setElapsedTime(Date.now() - start);
+      setElapsedTime((elapsed) => elapsed + 1000);
     }, 1000);
     return () => clearInterval(timer);
-  }, [start, won, lost]);
+  }, [won, lost, paused]);
 
   // Ambient background dust particle generator
   const dustParticles = useMemo(() => {
@@ -173,7 +175,7 @@ export function SudokuGame({
 
   // Grid editing action
   const place = useCallback((n: number) => {
-    if (sel == null || fixed[sel] || won || lost) return;
+    if (paused || sel == null || fixed[sel] || won || lost) return;
     setWarningMsg(null);
 
     // If notes mode is toggled and grid cell is empty, adjust notes
@@ -211,22 +213,22 @@ export function SudokuGame({
     if (errorIndices.includes(sel)) {
       setErrorIndices((prev) => prev.filter((idx) => idx !== sel));
     }
-  }, [sel, fixed, grid, notesMode, won, lost, errorIndices, soundEnabled]);
+  }, [paused, sel, fixed, grid, notesMode, won, lost, errorIndices, soundEnabled]);
 
   // Undo last action
-  const undo = () => {
-    if (history.length === 0 || won || lost) return;
+  const undo = useCallback(() => {
+    if (paused || history.length === 0 || won || lost) return;
     const previousGrid = history[history.length - 1];
     setHistory((prev) => prev.slice(0, -1));
     setGrid(previousGrid);
     sfx.tap(soundEnabled);
     setErrorIndices([]);
     setWarningMsg(null);
-  };
+  }, [history, lost, paused, soundEnabled, won]);
 
   // Give a hint (correctly fill one empty cell)
-  const getHint = () => {
-    if (won || lost || hintsUsed >= 2) return;
+  const getHint = useCallback(() => {
+    if (paused || won || lost || hintsUsed >= 2) return;
 
     // Find indices of empty cells or incorrect user entries
     const candidates: number[] = [];
@@ -255,18 +257,28 @@ export function SudokuGame({
     sfx.correct(soundEnabled);
 
     // Highlight the hint cell briefly
-    setTimeout(() => {
+    schedule(() => {
       setHintActiveCell(null);
     }, 1200);
 
     // Clear errors or notes for this cell
     setErrorIndices((prev) => prev.filter((idx) => idx !== targetIdx));
     setNotes((prev) => ({ ...prev, [targetIdx]: [] }));
-  };
+  }, [
+    fixed,
+    grid,
+    hintsUsed,
+    lost,
+    paused,
+    schedule,
+    solution,
+    soundEnabled,
+    won,
+  ]);
 
   // Submit and check solution
-  const checkSolution = () => {
-    if (won || lost) return;
+  const checkSolution = useCallback(() => {
+    if (paused || won || lost || completedRef.current) return;
 
     // Check for unfilled cells
     const hasEmpty = grid.some((v) => v === 0);
@@ -274,7 +286,7 @@ export function SudokuGame({
       setWarningMsg("Fill all cells before submitting!");
       setShakeKey((k) => k + 1);
       sfx.wrong(soundEnabled);
-      setTimeout(() => setWarningMsg(null), 3000);
+      schedule(() => setWarningMsg(null), 3000);
       return;
     }
 
@@ -311,11 +323,13 @@ export function SudokuGame({
       );
       setFinalScore(score);
       onScoreChange?.(score);
-
-      // Present stats modal inside the game shell after celebration ripple
-      setTimeout(() => {
-        setShowStatsModal(true);
-      }, 2000);
+      completedRef.current = true;
+      onComplete({
+        score,
+        won: true,
+        timeMs: elapsedTime,
+        difficulty,
+      });
 
     } else {
       // Wrong cells found
@@ -328,22 +342,36 @@ export function SudokuGame({
       if (nextMistakes >= maxMistakes) {
         setLost(true);
         sfx.lose(soundEnabled);
-        setTimeout(() => {
-          onComplete({
-            score: 0,
-            won: false,
-            timeMs: elapsedTime,
-            difficulty,
-          });
-        }, 2200);
+        completedRef.current = true;
+        onComplete({
+          score: 0,
+          won: false,
+          timeMs: elapsedTime,
+          difficulty,
+        });
       }
     }
-  };
+  }, [
+    difficulty,
+    elapsedTime,
+    grid,
+    hintsUsed,
+    lost,
+    maxMistakes,
+    mistakes,
+    onComplete,
+    onScoreChange,
+    paused,
+    solution,
+    schedule,
+    soundEnabled,
+    won,
+  ]);
 
   // Keyboard navigation and control listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (won || lost || showStatsModal) return;
+      if (paused || won || lost || showStatsModal) return;
 
       const activeKey = e.key.toLowerCase();
 
@@ -396,7 +424,21 @@ export function SudokuGame({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [sel, won, lost, showStatsModal, place, notesMode, history, hintsUsed, soundEnabled]);
+  }, [
+    paused,
+    sel,
+    won,
+    lost,
+    showStatsModal,
+    place,
+    notesMode,
+    history,
+    hintsUsed,
+    soundEnabled,
+    checkSolution,
+    getHint,
+    undo,
+  ]);
 
   // Helpers for Same-Number/Intersections highlights
   const selectedVal = sel !== null ? grid[sel] : 0;
