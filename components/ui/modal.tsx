@@ -10,9 +10,16 @@ interface ModalProps {
   onClose: () => void;
   children: React.ReactNode;
   className?: string;
+  position?: "center" | "middle-right";
 }
 
-export function ModalOverlay({ open, onClose, children, className }: ModalProps) {
+export function ModalOverlay({
+  open,
+  onClose,
+  children,
+  className,
+  position = "center",
+}: ModalProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -20,36 +27,64 @@ export function ModalOverlay({ open, onClose, children, className }: ModalProps)
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      document.body.style.overflow = "";
+      return;
+    }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKeyDown);
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = "";
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [open, onClose]);
 
   if (!mounted) return null;
 
+  const isMiddleRight = position === "middle-right";
+
   return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto"
+          key="modal-overlay"
+          className={cn(
+            "fixed inset-0 z-[99999] flex p-4 sm:p-6 overflow-y-auto bg-black/60 backdrop-blur-sm",
+            isMiddleRight
+              ? "items-center justify-end md:pr-10 lg:pr-14"
+              : "items-center justify-center",
+          )}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
         >
           <motion.div
-            className={cn("w-full my-auto flex justify-center pointer-events-auto", className)}
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className={cn(
+              "w-full pointer-events-auto relative z-[100000]",
+              isMiddleRight
+                ? "max-w-[400px]"
+                : "max-w-[440px] my-auto flex justify-center",
+              className,
+            )}
+            initial={
+              isMiddleRight
+                ? { opacity: 0, x: 30, scale: 0.96 }
+                : { opacity: 0, scale: 0.95, y: 10 }
+            }
+            animate={
+              isMiddleRight
+                ? { opacity: 1, x: 0, scale: 1 }
+                : { opacity: 1, scale: 1, y: 0 }
+            }
+            exit={
+              isMiddleRight
+                ? { opacity: 0, x: 30, scale: 0.96 }
+                : { opacity: 0, scale: 0.95, y: 10 }
+            }
             transition={{ duration: 0.2 }}
             onClick={(e) => e.stopPropagation()}
           >

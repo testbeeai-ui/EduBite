@@ -11,6 +11,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { VIEW_TO_PATH, PATH_TO_VIEW } from "@/lib/routes";
 import { DOSE_QUESTION_COUNT, FEATURES, FUNBRAIN_DURATION_SEC } from "@/data/config";
 import { HABIT_DEFINITIONS } from "@/data/habits";
 import { FUNBRAIN_QUESTIONS_PER_DAY } from "@/lib/content/schedule";
@@ -573,9 +575,19 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading, requireAuth } = useAuth();
   const { todayKey: clockToday } = useAppClock();
   const [state, dispatch] = useReducer(gameReducer, createInitialState());
-  const [hydrated, setHydrated] = useState(false);
-  const [activeView, setActiveViewState] = useState<AppView>("home");
-  const [modal, setModal] = useState<ModalState>({ pledge: null, reel: null });
+  // Guest home can render immediately; signed-in progress still re-hydrates below.
+  const [hydrated, setHydrated] = useState(true);
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const activeView = useMemo<AppView>(() => {
+    return PATH_TO_VIEW[pathname] ?? "home";
+  }, [pathname]);
+
+  const modalState = useState<ModalState>({ pledge: null, reel: null });
+  const modal = modalState[0];
+  const setModal = modalState[1];
+
   const userIdRef = useRef<string | null>(null);
   const saveQueueRef = useRef(
     createSaveQueue<GameState>(async (next) => {
@@ -585,11 +597,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }),
   );
 
-  const goToView = useCallback((view: AppView) => {
-    setActiveViewState(view);
-    window.history.replaceState(null, "", `#${view}`);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }, []);
+  const goToView = useCallback(
+    (view: AppView) => {
+      const targetPath = VIEW_TO_PATH[view] ?? "/";
+      if (typeof window !== "undefined" && window.location.pathname !== targetPath) {
+        router.push(targetPath);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    },
+    [router],
+  );
 
   useEffect(() => {
     if (authLoading) return;
@@ -600,12 +617,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "HYDRATE", payload: createInitialState() });
       setHydrated(true);
       setModal({ pledge: null, reel: null });
-      setActiveViewState((current) => {
-        if (PUBLIC_VIEWS.has(current)) return current;
-        window.history.replaceState(null, "", "#home");
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        return "home";
-      });
+      if (!PUBLIC_VIEWS.has(PATH_TO_VIEW[pathname] ?? "home")) {
+        router.push("/");
+      }
       return;
     }
 
@@ -650,23 +664,19 @@ export function GameProvider({ children }: { children: ReactNode }) {
         "inspiration",
         "ai",
         "challenge",
+        "profile",
       ];
       const pending = readPendingView() as AppView | null;
       if (pending && validViews.includes(pending)) {
         clearPendingView();
         goToView(pending);
-        return;
-      }
-      const hash = window.location.hash.replace("#", "") as AppView;
-      if (validViews.includes(hash) && !PUBLIC_VIEWS.has(hash)) {
-        goToView(hash);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [user, authLoading, goToView]);
+  }, [user, authLoading, goToView, pathname, router, setModal]);
 
   useEffect(() => {
     if (!hydrated || authLoading || !user) return;

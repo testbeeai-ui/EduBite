@@ -33,11 +33,11 @@ export function AppHeader() {
   }, [burgerOpen]);
 
   return (
-    <header className="sticky top-0 z-50 bg-[rgba(11,13,18,0.9)] backdrop-blur-[14px] border-b border-[var(--line)]">
+    <header className="sticky top-0 z-[200] bg-[rgba(11,13,18,0.9)] backdrop-blur-[14px] border-b border-[var(--line)]">
       <div
         className={cn(
           "max-w-[1400px] mx-auto flex items-center gap-2 sm:gap-3",
-          "px-3 sm:px-5 lg:px-6 py-2.5 sm:py-[11px]",
+          "px-3 sm:px-5 lg:px-6 py-2.5 sm:py-[11px] min-h-[var(--app-header-height)]",
         )}
       >
         <button

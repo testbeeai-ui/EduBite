@@ -203,10 +203,4 @@ export async function applyBrainGymMutation(
   };
 }
 
-/** @deprecated Local SQLite migrate removed — progress is Supabase-only. */
-export async function migrateGameStateFromSqliteIfNeeded(
-  userId: string,
-  _sqliteReader: () => GameState | null,
-): Promise<GameState | null> {
-  return readNormalizedGameState(userId);
-}
+

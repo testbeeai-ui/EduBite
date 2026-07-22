@@ -9,7 +9,8 @@ export type AppView =
   | "achievements"
   | "inspiration"
   | "ai"
-  | "challenge";
+  | "challenge"
+  | "profile";
 
 export type PledgeType = "am" | "pm";
 
