@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
-import { GameBoard, StatusLine, gameTargetClass } from "./_shared";
+import { GameBoard, StatusLine } from "./_shared";
 import { cn } from "@/lib/utils";
 
 type Target = { id: number; x: number; y: number; decoy: boolean };

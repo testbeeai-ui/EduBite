@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppHeader } from "@/components/layout/app-header";
@@ -15,6 +15,7 @@ import { InspirationView } from "@/components/views/inspiration-view";
 import { MonthlyChallengeView } from "@/components/views/monthly-challenge-view";
 import { PuzzlesView } from "@/components/views/puzzles-view";
 import { WASquadView } from "@/components/views/wasquad-view";
+import { ProfileView } from "@/components/views/profile-view";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { useGame } from "@/lib/store/game-provider";
@@ -40,13 +41,19 @@ const VIEW_MAP: Record<AppView, React.ComponentType> = {
   inspiration: InspirationView,
   ai: AIView,
   challenge: MonthlyChallengeView,
+  profile: ProfileView,
 };
 
 const PUBLIC_VIEWS = new Set<AppView>(["home"]);
 
 export function AppShell() {
+  const [mounted, setMounted] = useState(false);
   const { activeView, hydrated, setActiveView } = useGame();
   const { user, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (authLoading) return;
@@ -64,8 +71,11 @@ export function AppShell() {
   return (
     <>
       <AppHeader />
-      <main className="max-w-[1180px] w-full mx-auto px-4 sm:px-7 py-5 sm:py-8 pb-8 sm:pb-10">
-        {!hydrated || authLoading ? (
+      <main
+        className="max-w-[1180px] w-full mx-auto px-4 sm:px-7 py-5 sm:py-8 pb-8 sm:pb-10"
+        suppressHydrationWarning
+      >
+        {!mounted || !hydrated ? (
           <PageSkeleton />
         ) : (
           <AnimatePresence mode="wait">

@@ -59,21 +59,31 @@ export function BurgerPanel({
             transition={{ type: "spring", stiffness: 380, damping: 34 }}
           >
             <div className="flex items-center justify-between gap-3 px-4 py-4 border-b border-[var(--line)]">
-              <div className="flex items-center gap-3 min-w-0">
+              <div
+                onClick={() => {
+                  if (signedIn) {
+                    onNavigate("profile");
+                  } else {
+                    openLogin();
+                    onClose();
+                  }
+                }}
+                className="flex items-center gap-3 min-w-0 cursor-pointer group flex-1"
+              >
                 <div
                   className={cn(
-                    "w-10 h-10 rounded-xl bg-gradient-to-br from-purple to-pink flex items-center justify-center font-display font-bold text-[15px] shrink-0",
+                    "w-10 h-10 rounded-xl bg-gradient-to-br from-purple to-pink flex items-center justify-center font-display font-bold text-[15px] shrink-0 text-white shadow-sm transition-transform group-hover:scale-105",
                     !signedIn && "opacity-50",
                   )}
                 >
                   {signedIn ? initial : "?"}
                 </div>
                 <div className="min-w-0">
-                  <div className="font-display font-bold text-sm truncate">
-                    {loading ? "…" : signedIn ? displayName : "Signed out"}
+                  <div className="font-display font-bold text-sm truncate group-hover:text-teal transition-colors">
+                    {loading ? "…" : signedIn ? displayName : "Sign in / Register"}
                   </div>
                   <div className="text-[11px] text-[var(--text-dim)] mt-px">
-                    Edubite · Level {levelInfo.current.level}
+                    {signedIn ? `Level ${levelInfo.current.level} Profile →` : "Tap to sign in"}
                   </div>
                 </div>
               </div>

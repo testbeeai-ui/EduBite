@@ -284,7 +284,7 @@ export function TrueFalseGame({
 }: GameComponentProps) {
   const duration = 40;
   const [left, setLeft] = useState(duration);
-  const [deck, setDeck] = useState(() => shuffle(FACTS));
+  const [deck] = useState(() => shuffle(FACTS));
   const [i, setI] = useState(0);
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);

@@ -60,8 +60,10 @@ export async function GET(request: NextRequest) {
       hasVerifier,
       cookieNames: cookieNames.filter((n) => n.startsWith("sb-")),
     });
-    // Redirect to clean home — do not put auth_error in the URL (causes HMR spam + 500s).
-    response = NextResponse.redirect(finish);
+    // Hash (not query) — AuthProvider shows a one-shot error without sticky HMR loops.
+    const fail = new URL("/", url.origin);
+    fail.hash = "auth_error=oauth_exchange_failed";
+    response = NextResponse.redirect(fail);
   }
 
   return response;

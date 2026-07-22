@@ -573,7 +573,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading, requireAuth } = useAuth();
   const { todayKey: clockToday } = useAppClock();
   const [state, dispatch] = useReducer(gameReducer, createInitialState());
-  const [hydrated, setHydrated] = useState(false);
+  // Guest home can render immediately; signed-in progress still re-hydrates below.
+  const [hydrated, setHydrated] = useState(true);
   const [activeView, setActiveViewState] = useState<AppView>("home");
   const [modal, setModal] = useState<ModalState>({ pledge: null, reel: null });
   const userIdRef = useRef<string | null>(null);
@@ -650,6 +651,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         "inspiration",
         "ai",
         "challenge",
+        "profile",
       ];
       const pending = readPendingView() as AppView | null;
       if (pending && validViews.includes(pending)) {

@@ -9,7 +9,6 @@ import { Card } from "@/components/ui/card";
 import { SectionTitle } from "@/components/ui/modal";
 import { useGame } from "@/lib/store/game-provider";
 import { formatRdm } from "@/lib/utils";
-import { cn } from "@/lib/utils";
 
 function LevelRing({
   level,

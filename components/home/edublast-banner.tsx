@@ -91,6 +91,7 @@ export function EdublastBanner() {
     <section
       aria-label="EduBlast banner"
       className="relative mb-4 overflow-hidden rounded-[14px] border border-[#1e3352] bg-gradient-to-br from-[#0b1622] via-[#0e1c2e] to-[#091a18]"
+      suppressHydrationWarning
     >
       <div
         className="pointer-events-none absolute -left-10 -top-[60px] h-[280px] w-[280px] rounded-full bg-[radial-gradient(circle,rgba(29,158,117,0.12)_0%,transparent_65%)]"
@@ -109,7 +110,8 @@ export function EdublastBanner() {
               alt="EduBlast"
               width={180}
               height={28}
-              className="h-7 w-auto max-w-[200px] object-contain object-left"
+              className="h-7 max-w-[200px] object-contain object-left"
+              style={{ width: "auto", height: "auto" }}
               priority
             />
           </div>

@@ -25,6 +25,8 @@ interface AuthContextValue {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  /** Last sign-in failure message (shown in the login modal). */
+  authError: string | null;
   /** If logged in, runs `fn`. Otherwise opens login modal and runs `fn` after success. */
   requireAuth: (fn?: () => void) => boolean;
   openLogin: (pending?: () => void) => void;
@@ -32,6 +34,10 @@ interface AuthContextValue {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 }
+
+const GET_SESSION_TIMEOUT_MS = 4000;
+const OAUTH_FAIL_MESSAGE =
+  "Google sign-in did not finish. Use http://localhost:3000 (not 127.0.0.1) and try again.";
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -48,28 +54,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [loginOpen, setLoginOpen] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const pendingRef = useRef<PendingFn>(null);
   const loadingRef = useRef(true);
 
   useEffect(() => {
     let mounted = true;
 
+    const finishLoading = () => {
+      if (!mounted || !loadingRef.current) return;
+      loadingRef.current = false;
+      setLoading(false);
+    };
+
     // Clear sticky OAuth error query/hash so HMR / refresh does not keep replaying it.
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       let dirty = false;
+      let oauthFailed = false;
       if (url.searchParams.has("auth_error")) {
         url.searchParams.delete("auth_error");
         dirty = true;
+        oauthFailed = true;
       }
       if (url.hash.includes("auth_error=oauth_exchange_failed")) {
         url.hash = url.hash
           .replace(/^#?auth_error=oauth_exchange_failed&?/, "")
           .replace(/^#/, "");
         dirty = true;
-        console.warn(
-          "[auth] Google sign-in failed once (PKCE exchange). Try Continue with Google again.",
-        );
+        oauthFailed = true;
       }
       if (dirty) {
         const cleaned =
@@ -78,33 +91,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           (url.hash ? `#${url.hash.replace(/^#/, "")}` : "");
         window.history.replaceState(null, "", cleaned || "/");
       }
-    }
-
-    void supabase.auth.getSession().then(({ data }) => {
-      if (!mounted) return;
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      loadingRef.current = false;
-      setLoading(false);
-
-      if (data.session?.user) {
-        setLoginOpen(false);
-        runPending(pendingRef);
-      } else if (pendingRef.current) {
-        // Click happened during rehydrate with no session → show login as before.
+      if (oauthFailed) {
+        console.warn(
+          "[auth] Google sign-in failed once (PKCE exchange). Try Continue with Google again.",
+        );
+        setAuthError(OAUTH_FAIL_MESSAGE);
         setLoginOpen(true);
       }
-    });
+    }
+
+    // Never leave the shell stuck on skeleton if Supabase session probe hangs.
+    const timeoutId = window.setTimeout(() => {
+      if (!mounted || !loadingRef.current) return;
+      console.warn("[auth] getSession timed out — continuing as guest");
+      finishLoading();
+      if (pendingRef.current) setLoginOpen(true);
+    }, GET_SESSION_TIMEOUT_MS);
+
+    void supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) {
+          console.error("[auth] getSession", error);
+        }
+        setSession(data.session);
+        setUser(data.session?.user ?? null);
+        finishLoading();
+
+        if (data.session?.user) {
+          setAuthError(null);
+          setLoginOpen(false);
+          runPending(pendingRef);
+        } else if (pendingRef.current) {
+          // Click happened during rehydrate with no session → show login as before.
+          setLoginOpen(true);
+        }
+      })
+      .catch((err) => {
+        console.error("[auth] getSession threw", err);
+        if (!mounted) return;
+        finishLoading();
+        if (pendingRef.current) setLoginOpen(true);
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId);
+      });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
-      loadingRef.current = false;
-      setLoading(false);
+      finishLoading();
 
       if (nextSession?.user) {
+        setAuthError(null);
         setLoginOpen(false);
         runPending(pendingRef);
       }
@@ -112,6 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      window.clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
   }, []);
@@ -123,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const closeLogin = useCallback(() => {
     pendingRef.current = null;
+    setAuthError(null);
     setLoginOpen(false);
   }, []);
 
@@ -132,42 +176,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fn?.();
         return true;
       }
-      // While cookies/session rehydrate, do not flash the login modal.
-      if (loadingRef.current || loading) {
-        pendingRef.current = fn ?? null;
-        return false;
-      }
       openLogin(fn);
       return false;
     },
-    [user, loading, openLogin],
+    [user, openLogin],
   );
 
   const signInWithGoogle = useCallback(async () => {
     setSigningIn(true);
+    setAuthError(null);
     try {
       const pending = readPendingView();
       if (pending) storePendingView(pending);
-      const redirectTo = `${window.location.origin}/auth/callback`;
-      // skipBrowserRedirect: flush PKCE code-verifier cookie before leaving the page
-      // (prevents oauth_exchange_failed when redirect races cookie write).
+      const origin = window.location.origin;
+      if (
+        origin.includes("127.0.0.1") ||
+        /^https?:\/\/\d+\.\d+\.\d+\.\d+/.test(origin)
+      ) {
+        setAuthError(
+          "Open the app at http://localhost:3000 before signing in (IP / 127.0.0.1 breaks Google cookies).",
+        );
+        setSigningIn(false);
+        return;
+      }
+      const redirectTo = `${origin}/auth/callback`;
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo,
-          skipBrowserRedirect: true,
           queryParams: { prompt: "select_account" },
         },
       });
-      if (error || !data.url) {
-        console.error("signInWithOAuth", error);
+      if (error) {
+        console.error("signInWithOAuth error:", error);
+        setAuthError(
+          error?.message ??
+            "Could not start Google sign-in. Please try again.",
+        );
         setSigningIn(false);
         return;
       }
-      await new Promise((r) => window.setTimeout(r, 80));
-      window.location.assign(data.url);
+      if (data?.url) {
+        window.location.href = data.url;
+      }
     } catch (err) {
-      console.error("signInWithOAuth", err);
+      console.error("signInWithOAuth error:", err);
+      setAuthError("Could not start Google sign-in. Please try again.");
       setSigningIn(false);
     }
   }, []);
@@ -186,6 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       session,
       loading,
+      authError,
       requireAuth,
       openLogin,
       closeLogin,
@@ -196,6 +251,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       session,
       loading,
+      authError,
       requireAuth,
       openLogin,
       closeLogin,
@@ -210,6 +266,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       <LoginModal
         open={loginOpen}
         loading={signingIn}
+        error={authError}
         onClose={closeLogin}
         onGoogle={signInWithGoogle}
       />

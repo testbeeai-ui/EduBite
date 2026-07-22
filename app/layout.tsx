@@ -37,12 +37,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="stylesheet" href={TABLER_ICONS_HREF} />
       </head>
       <body
         className={`${baloo.variable} ${inter.variable} ${jetbrains.variable} antialiased`}
+        suppressHydrationWarning
       >
         <AuthProvider>
           <AppClockProvider>
