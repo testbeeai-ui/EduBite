@@ -3,16 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 
 /**
  * Exchange Google OAuth PKCE code and set session cookies.
- * Register this URL in Supabase Auth → Redirect URLs:
+ * Edubite: no waitlist / whitelist — any Google account can sign in.
+ * Register this exact URL in Supabase Auth → Redirect URLs:
  *   http://localhost:3000/auth/callback
  *   https://<edubite-domain>/auth/callback
  */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
+  // Prefer explicit next, else home. Do not rely on query in redirectTo allowlist.
   const next = url.searchParams.get("next") ?? "/";
   const finish = new URL(next.startsWith("/") ? next : "/", url.origin);
-  // Never leave sticky auth_error query params on the home URL.
   finish.search = "";
   finish.hash = "";
 
@@ -60,8 +61,8 @@ export async function GET(request: NextRequest) {
       hasVerifier,
       cookieNames: cookieNames.filter((n) => n.startsWith("sb-")),
     });
-    // Hash (not query) — AuthProvider shows a one-shot error without sticky HMR loops.
-    const fail = new URL("/", url.origin);
+    // Stay on Edubite — never send users to EduBlast whitelist error UI.
+    const fail = new URL("/login", url.origin);
     fail.hash = "auth_error=oauth_exchange_failed";
     response = NextResponse.redirect(fail);
   }

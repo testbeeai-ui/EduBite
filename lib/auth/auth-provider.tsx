@@ -10,9 +10,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { LoginModal } from "@/components/auth/login-modal";
 import {
   clearPendingView,
   readPendingView,
@@ -25,9 +25,11 @@ interface AuthContextValue {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  /** Last sign-in failure message (shown in the login modal). */
+  signingIn: boolean;
+  /** Last sign-in failure message (shown on /login). */
   authError: string | null;
-  /** If logged in, runs `fn`. Otherwise opens login modal and runs `fn` after success. */
+  clearAuthError: () => void;
+  /** If logged in, runs `fn`. Otherwise goes to /login and runs `fn` after success. */
   requireAuth: (fn?: () => void) => boolean;
   openLogin: (pending?: () => void) => void;
   closeLogin: () => void;
@@ -37,7 +39,7 @@ interface AuthContextValue {
 
 const GET_SESSION_TIMEOUT_MS = 4000;
 const OAUTH_FAIL_MESSAGE =
-  "Google sign-in did not finish. Use http://localhost:3000 (not 127.0.0.1) and try again.";
+  "Google sign-in did not finish for Edubite. Use http://localhost:3000 only, and add http://localhost:3000/auth/callback in Supabase → Authentication → Redirect URLs. Edubite does not need waitlist approval (that is EduBlast only).";
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -49,10 +51,11 @@ function runPending(pendingRef: { current: PendingFn }) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loginOpen, setLoginOpen] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const pendingRef = useRef<PendingFn>(null);
@@ -96,7 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           "[auth] Google sign-in failed once (PKCE exchange). Try Continue with Google again.",
         );
         setAuthError(OAUTH_FAIL_MESSAGE);
-        setLoginOpen(true);
+        if (url.pathname !== "/login") {
+          router.replace("/login");
+        }
       }
     }
 
@@ -105,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!mounted || !loadingRef.current) return;
       console.warn("[auth] getSession timed out — continuing as guest");
       finishLoading();
-      if (pendingRef.current) setLoginOpen(true);
+      if (pendingRef.current) router.push("/login");
     }, GET_SESSION_TIMEOUT_MS);
 
     void supabase.auth
@@ -121,18 +126,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (data.session?.user) {
           setAuthError(null);
-          setLoginOpen(false);
           runPending(pendingRef);
+          if (window.location.pathname === "/login") {
+            router.replace("/");
+          }
         } else if (pendingRef.current) {
-          // Click happened during rehydrate with no session → show login as before.
-          setLoginOpen(true);
+          router.push("/login");
         }
       })
       .catch((err) => {
         console.error("[auth] getSession threw", err);
         if (!mounted) return;
         finishLoading();
-        if (pendingRef.current) setLoginOpen(true);
+        if (pendingRef.current) router.push("/login");
       })
       .finally(() => {
         window.clearTimeout(timeoutId);
@@ -147,8 +153,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (nextSession?.user) {
         setAuthError(null);
-        setLoginOpen(false);
+        setSigningIn(false);
         runPending(pendingRef);
+        if (window.location.pathname === "/login") {
+          router.replace("/");
+        }
       }
     });
 
@@ -157,18 +166,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(timeoutId);
       subscription.unsubscribe();
     };
+  }, [router]);
+
+  const clearAuthError = useCallback(() => {
+    setAuthError(null);
   }, []);
 
-  const openLogin = useCallback((pending?: () => void) => {
-    pendingRef.current = pending ?? null;
-    setLoginOpen(true);
-  }, []);
+  const openLogin = useCallback(
+    (pending?: () => void) => {
+      pendingRef.current = pending ?? null;
+      if (pathname !== "/login") {
+        router.push("/login");
+      }
+    },
+    [pathname, router],
+  );
 
   const closeLogin = useCallback(() => {
     pendingRef.current = null;
     setAuthError(null);
-    setLoginOpen(false);
-  }, []);
+    if (pathname === "/login") {
+      router.push("/");
+    }
+  }, [pathname, router]);
 
   const requireAuth = useCallback(
     (fn?: () => void) => {
@@ -199,6 +219,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSigningIn(false);
         return;
       }
+      // Exact path only — query strings often fail Supabase allowlist and
+      // fall back to Site URL (www.edublast.in), which is EduBlast + whitelist.
       const redirectTo = `${origin}/auth/callback`;
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -229,18 +251,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     pendingRef.current = null;
     clearPendingView();
-    setLoginOpen(false);
     setUser(null);
     setSession(null);
     await supabase.auth.signOut({ scope: "local" });
-  }, []);
+    if (pathname === "/login") {
+      router.push("/");
+    }
+  }, [pathname, router]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
       session,
       loading,
+      signingIn,
       authError,
+      clearAuthError,
       requireAuth,
       openLogin,
       closeLogin,
@@ -251,7 +277,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       session,
       loading,
+      signingIn,
       authError,
+      clearAuthError,
       requireAuth,
       openLogin,
       closeLogin,
@@ -261,16 +289,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <AuthContext.Provider value={value}>
-      {children}
-      <LoginModal
-        open={loginOpen}
-        loading={signingIn}
-        error={authError}
-        onClose={closeLogin}
-        onGoogle={signInWithGoogle}
-      />
-    </AuthContext.Provider>
+    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
   );
 }
 

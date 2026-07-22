@@ -32,7 +32,7 @@ export async function middleware(request: NextRequest) {
 
   // Drop sticky failed-login query so Fast Refresh does not keep replaying it.
   if (
-    (pathname === "/" || pathname === "") &&
+    (pathname === "/" || pathname === "" || pathname === "/login") &&
     request.nextUrl.searchParams.has("auth_error")
   ) {
     const url = request.nextUrl.clone();

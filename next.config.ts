@@ -1,24 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Hide the Next.js "N" badge — not part of the student product UI.
   devIndicators: false,
   serverExternalPackages: [],
-  webpack: (config, { dev }) => {
-    if (dev) {
-      // SQLite WAL writes must not trigger Fast Refresh (infinite compile loop).
-      config.watchOptions = {
-        ...config.watchOptions,
-        ignored: [
-          "**/node_modules/**",
-          "**/.git/**",
-          "**/data/**",
-          "**/*.txt",
-          "**/*.sqlite",
-          "**/*.sqlite-*",
-        ],
-      };
-    }
+  webpack: (config) => {
+    // Hide Webpack cache performance warnings in terminal logs
+    config.infrastructureLogging = { level: "error" };
+    config.ignoreWarnings = [
+      ...(config.ignoreWarnings || []),
+      /Serializing big strings/,
+      /PackFileCacheStrategy/,
+    ];
     return config;
   },
 };
