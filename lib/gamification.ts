@@ -52,6 +52,7 @@ export function createInitialState(): GameState {
       combo: 0,
       highScore: 0,
       currentQuestionIndex: 0,
+      answers: [],
       finished: false,
       completed: false,
     },
@@ -68,6 +69,10 @@ export function createInitialState(): GameState {
     lastActiveDate: todayKey(),
     doseRdmCredited: 0,
     funbrainRdmCredited: 0,
+    puzzleCompleted: false,
+    doseDayLog: {},
+    challengeEnrolledMonthKey: null,
+    challengePuzzleSubmittedMonthKey: null,
   };
 }
 
@@ -95,22 +100,43 @@ export function getLevelInfo(rdm: number) {
 }
 
 export function todayCriteria(state: GameState): DayCriteria {
-  const habitsDone = state.habits.every((h) => h.done);
-  const doseDone = state.dose.completed;
   return {
-    routine: doseDone,
+    dose: state.dose.completed,
+    funbrain: state.funbrain.completed,
+    puzzles: state.puzzleCompleted,
+    habits: state.habits.every((h) => h.done),
     pledges: state.pledgeAM && state.pledgePM,
-    habits: habitsDone,
-    gyan: state.gyanTimeMs >= GYAN_STREAK_GOAL_MS,
   };
 }
 
 export function isFullDay(criteria: DayCriteria): boolean {
-  return criteria.routine && criteria.pledges && criteria.habits && criteria.gyan;
+  return (
+    criteria.dose &&
+    criteria.funbrain &&
+    criteria.puzzles &&
+    criteria.habits &&
+    criteria.pledges
+  );
 }
 
 function emptyDayCriteria(): DayCriteria {
-  return { routine: false, pledges: false, habits: false, gyan: false };
+  return {
+    dose: false,
+    funbrain: false,
+    puzzles: false,
+    habits: false,
+    pledges: false,
+  };
+}
+
+export function criteriaCount(day: DayCriteria): number {
+  return [
+    day.dose,
+    day.funbrain,
+    day.puzzles,
+    day.habits,
+    day.pledges,
+  ].filter(Boolean).length;
 }
 
 function criteriaForDate(state: GameState, dateKey: string): DayCriteria {

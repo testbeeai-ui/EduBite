@@ -52,7 +52,6 @@ export function GameShell({
   const [elapsed, setElapsed] = useState(0);
   const completionHandledRef = useRef(false);
   const elapsedRef = useRef(0);
-  const pausedRef = useRef(false);
   const activeRunKeyRef = useRef(0);
   const shellActiveRef = useRef(true);
 
@@ -64,7 +63,6 @@ export function GameShell({
     setRestartKey(0);
     setElapsed(0);
     elapsedRef.current = 0;
-    pausedRef.current = false;
     completionHandledRef.current = false;
     activeRunKeyRef.current = 0;
     clearLastResult();
@@ -90,10 +88,6 @@ export function GameShell({
     );
     return () => window.clearInterval(id);
   }, [phase, paused]);
-
-  useEffect(() => {
-    pausedRef.current = paused;
-  }, [paused]);
 
   useEffect(() => {
     if (
@@ -122,17 +116,22 @@ export function GameShell({
       if (
         !shellActiveRef.current ||
         runKey !== activeRunKeyRef.current ||
-        completionHandledRef.current ||
-        pausedRef.current
+        completionHandledRef.current
       ) {
         return;
       }
       completionHandledRef.current = true;
-      if (result.won) sfx.win(progress.soundEnabled);
+      const safeResult = {
+        ...result,
+        score: Number.isFinite(result.score)
+          ? Math.max(0, Math.round(result.score))
+          : 0,
+      };
+      if (safeResult.won) sfx.win(progress.soundEnabled);
       else sfx.lose(progress.soundEnabled);
       completeSession({
-        ...result,
-        difficulty: result.difficulty || difficulty,
+        ...safeResult,
+        difficulty: safeResult.difficulty || difficulty,
         timeMs: elapsedRef.current,
       });
       setPhase("result");
@@ -177,11 +176,9 @@ export function GameShell({
     setScore(0);
     setLives(meta.maxLives ?? 0);
     setPaused(false);
-    setRestartKey((key) => {
-      const next = key + 1;
-      activeRunKeyRef.current = next;
-      return next;
-    });
+    const nextRunKey = activeRunKeyRef.current + 1;
+    activeRunKeyRef.current = nextRunKey;
+    setRestartKey(nextRunKey);
     clearLastResult();
     setPhase("play");
   };
@@ -358,10 +355,21 @@ export function GameShell({
                           {locked && (
                             <span
                               role="tooltip"
-                              className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-52 -translate-x-1/2 rounded-lg border border-amber/25 bg-[var(--surface-2)] px-3 py-2 text-center text-[11px] normal-case text-[var(--text-dim)] shadow-xl group-hover:block"
+                              className={cn(
+                                "pointer-events-none absolute bottom-full z-30 mb-2 hidden w-64 max-w-[calc(100vw-3rem)] rounded-xl border border-amber/30 bg-[#181d29] px-4 py-3 text-left text-xs leading-relaxed normal-case text-slate-200 shadow-[0_12px_32px_rgba(0,0,0,0.55)] group-hover:block",
+                                d === "easy"
+                                  ? "left-0"
+                                  : d === "hard"
+                                    ? "right-0"
+                                    : "left-1/2 -translate-x-1/2",
+                              )}
                             >
-                              You&apos;ve mastered this level — you&apos;re
-                              excellent at this game. Try another difficulty.
+                              <span className="mb-1 block font-display font-bold text-amber">
+                                {d[0]?.toUpperCase()}
+                                {d.slice(1)} mastered
+                              </span>
+                              You&apos;re excellent at this level. Try another
+                              difficulty.
                             </span>
                           )}
                         </span>

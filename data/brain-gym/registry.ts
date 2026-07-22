@@ -153,7 +153,7 @@ export const GAMES: GameMeta[] = [
     category: "logic",
     description: "Slide tiles, merge numbers, reach 2048.",
     instructions:
-      "Swipe or use arrow keys. Same numbers merge. Reach 2048 or go as high as you can.",
+      "Swipe or use arrow keys. Same numbers merge. Reach the level target shown; Hard builds to 2048.",
     estimatedSeconds: 180,
     hasTimer: false,
     hasLives: false,

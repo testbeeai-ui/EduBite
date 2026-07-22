@@ -1,49 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { QUOTES, ROLE_MODEL, DID_YOU_KNOW } from "@/data/inspiration";
+import { RoleModelProfile } from "@/components/inspiration/role-model-profile";
 import { Card } from "@/components/ui/card";
 import { SectionTitle, ViewHeader } from "@/components/ui/modal";
-import { getDayOfYearQuoteIndex } from "@/lib/utils";
-
-type InspirationState = {
-  quote: string;
-  roleModel: typeof ROLE_MODEL;
-  didYouKnow: typeof DID_YOU_KNOW;
-};
+import { useInspirationContent } from "@/lib/content/use-inspiration-content";
 
 export function InspirationView() {
-  const [data, setData] = useState<InspirationState>({
-    quote: QUOTES[getDayOfYearQuoteIndex(QUOTES.length)] ?? QUOTES[0]!,
-    roleModel: ROLE_MODEL,
-    didYouKnow: DID_YOU_KNOW,
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/content/inspiration", {
-          credentials: "include",
-        });
-        if (!res.ok) return;
-        const json = (await res.json()) as InspirationState & {
-          source?: string;
-        };
-        if (cancelled || !json.quote) return;
-        setData({
-          quote: json.quote,
-          roleModel: json.roleModel ?? ROLE_MODEL,
-          didYouKnow: json.didYouKnow ?? DID_YOU_KNOW,
-        });
-      } catch {
-        // keep static
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const data = useInspirationContent();
 
   return (
     <div>
@@ -64,23 +27,17 @@ export function InspirationView() {
       </Card>
 
       <SectionTitle>Inspiring role model</SectionTitle>
-      <Card className="flex flex-col sm:flex-row gap-5 items-center sm:items-start">
-        <div className="w-[78px] h-[78px] rounded-[20px] shrink-0 text-[32px] bg-gradient-to-br from-purple to-blue flex items-center justify-center">
-          {data.roleModel.avatar}
-        </div>
-        <div className="text-center sm:text-left">
-          <div className="font-display font-bold text-[17px]">{data.roleModel.name}</div>
-          <div className="font-mono text-[10.5px] text-teal mt-0.5">{data.roleModel.tag}</div>
-          <p className="text-[12.5px] text-[var(--text-dim)] mt-2 leading-relaxed">
-            {data.roleModel.bio}
-          </p>
-        </div>
-      </Card>
+      <RoleModelProfile roleModel={data.roleModel} />
 
       <SectionTitle>Why study science &amp; math</SectionTitle>
       <Card className="bg-gradient-to-br from-blue/10 to-[var(--surface)] border-blue/25">
         <div className="flex gap-3.5 items-start">
-          <span className="text-2xl">{data.didYouKnow.icon}</span>
+          <span
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue/10 text-2xl"
+            aria-hidden="true"
+          >
+            {data.didYouKnow.icon}
+          </span>
           <div>
             <div className="font-mono text-[10px] text-blue tracking-wider">
               {data.didYouKnow.badge}
@@ -90,17 +47,44 @@ export function InspirationView() {
             </h3>
           </div>
         </div>
-        <div className="flex gap-3 mt-[18px] bg-[var(--surface-2)] border border-[var(--line)] rounded-2xl p-4">
-          <div className="w-[38px] h-[38px] rounded-full bg-gradient-to-br from-amber to-pink flex items-center justify-center text-[17px] shrink-0">
-            🥧
-          </div>
-          <div>
-            <div className="font-display font-bold text-[12.5px] text-amber">
-              Prof Pi explains
+        <div className="mt-[18px] bg-[var(--surface-2)] border border-[var(--line)] rounded-2xl p-4 sm:p-5">
+          <div className="flex gap-3">
+            <div className="w-[38px] h-[38px] rounded-full bg-gradient-to-br from-amber to-pink flex items-center justify-center text-[17px] shrink-0">
+              🥧
             </div>
-            <p className="text-[13px] text-[var(--text-dim)] mt-1 leading-relaxed">
-              {data.didYouKnow.explanation}
+            <div className="min-w-0">
+              <div className="font-display font-bold text-[12.5px] text-amber">
+                Answer
+              </div>
+              <div className="mt-1.5 space-y-1.5 text-[13px] leading-snug text-[var(--text-dim)]">
+                {data.didYouKnow.explanation
+                  .split(/\n\s*\n/)
+                  .map((paragraph) => paragraph.trim())
+                  .filter(Boolean)
+                  .map((paragraph, index) => (
+                    <p key={index} className="whitespace-pre-line">
+                      {paragraph}
+                    </p>
+                  ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-[var(--line)] space-y-3">
+            <p className="text-[12.5px] leading-relaxed text-[var(--text-dim)]">
+              <span className="font-display font-bold text-[var(--text)]">
+                Linked concepts:{" "}
+              </span>
+              {data.didYouKnow.linkedConcepts}
             </p>
+            <div className="rounded-xl border border-blue/20 bg-blue/5 px-3.5 py-3">
+              <p className="text-[12.5px] leading-relaxed text-[var(--text-dim)]">
+                <span className="font-display font-bold text-blue">
+                  Follow-up question:{" "}
+                </span>
+                {data.didYouKnow.followUpQuestion}
+              </p>
+            </div>
           </div>
         </div>
       </Card>

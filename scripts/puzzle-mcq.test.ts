@@ -10,6 +10,7 @@ import { normalizePuzzleProgress } from "@/lib/db/normalize";
 import { puzzleForDate } from "@/lib/puzzles/daily";
 import { recordAttempt } from "@/lib/puzzles/storage";
 import { createDefaultPuzzleProgress } from "@/lib/puzzles/types";
+import { addDaysToKey } from "@/lib/utils";
 
 assert.equal(ORIGINAL_PUZZLES.length, 16);
 assert.equal(COMPETITIVE_PUZZLES.length, 98);
@@ -39,7 +40,46 @@ assert.equal(
   ORIGINAL_PUZZLES[legacyOrdinal % ORIGINAL_PUZZLES.length]!.id,
 );
 assert.equal(puzzleForDate("2026-07-20").id, "competitive-s1-q1");
-assert.equal(puzzleForDate("2026-07-21").id, "competitive-s1-q2");
+
+const launchDate = "2026-07-20";
+const firstCycle = Array.from({ length: PUZZLES.length }, (_, day) =>
+  puzzleForDate(addDaysToKey(launchDate, day)),
+);
+const secondCycle = Array.from({ length: PUZZLES.length }, (_, day) =>
+  puzzleForDate(addDaysToKey(launchDate, PUZZLES.length + day)),
+);
+const catalogIds = new Set(PUZZLES.map((puzzle) => puzzle.id));
+
+assert.equal(new Set(firstCycle.map((puzzle) => puzzle.id)).size, PUZZLES.length);
+assert.equal(
+  new Set(secondCycle.map((puzzle) => puzzle.id)).size,
+  PUZZLES.length,
+);
+assert.deepEqual(
+  new Set(firstCycle.map((puzzle) => puzzle.id)),
+  catalogIds,
+);
+assert.deepEqual(
+  new Set(secondCycle.map((puzzle) => puzzle.id)),
+  catalogIds,
+);
+assert.notEqual(
+  firstCycle[firstCycle.length - 1]?.id,
+  secondCycle[0]?.id,
+);
+assert.equal(
+  puzzleForDate("2026-08-15").id,
+  puzzleForDate("2026-08-15").id,
+);
+
+const firstTwoCycles = [...firstCycle, ...secondCycle];
+for (let index = 1; index < firstTwoCycles.length; index++) {
+  assert.notEqual(
+    firstTwoCycles[index - 1]?.topic,
+    firstTwoCycles[index]?.topic,
+    `consecutive puzzle topics repeated at day ${index + 1}`,
+  );
+}
 
 const normalizedLegacy = normalizePuzzleProgress({
   version: 1,

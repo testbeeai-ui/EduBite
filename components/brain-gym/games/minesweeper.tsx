@@ -8,6 +8,35 @@ import { cn } from "@/lib/utils";
 import { shuffle, range } from "@/lib/brain-gym/utils/shuffle";
 import { motion, AnimatePresence } from "framer-motion";
 
+function buildAdjacency(
+  size: number,
+  mineSet: Set<number>,
+): number[] {
+  const adjacency = Array(size * size).fill(0) as number[];
+  for (let i = 0; i < size * size; i++) {
+    if (mineSet.has(i)) continue;
+    const row = Math.floor(i / size);
+    const column = i % size;
+    for (let rowOffset = -1; rowOffset <= 1; rowOffset++) {
+      for (let columnOffset = -1; columnOffset <= 1; columnOffset++) {
+        if (!rowOffset && !columnOffset) continue;
+        const nextRow = row + rowOffset;
+        const nextColumn = column + columnOffset;
+        if (
+          nextRow >= 0 &&
+          nextRow < size &&
+          nextColumn >= 0 &&
+          nextColumn < size &&
+          mineSet.has(nextRow * size + nextColumn)
+        ) {
+          adjacency[i]!++;
+        }
+      }
+    }
+  }
+  return adjacency;
+}
+
 export function MinesweeperGame({
   difficulty,
   soundEnabled,
@@ -17,13 +46,15 @@ export function MinesweeperGame({
 }: GameComponentProps) {
   const size = difficulty === "hard" ? 9 : 8;
   const mines = difficulty === "easy" ? 8 : difficulty === "medium" ? 12 : 16;
-  const [mineSet] = useState(() => new Set(shuffle(range(size * size)).slice(0, mines)));
+  const [mineSet, setMineSet] = useState(
+    () => new Set(shuffle(range(size * size)).slice(0, mines)),
+  );
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
-  const [start] = useState(() => Date.now());
   const [dead, setDead] = useState(false);
   const [shouldShake, setShouldShake] = useState(false);
   const completedRef = useRef(false);
+  const activeTimeMsRef = useRef(0);
 
   // Screen shake on detonation
   useEffect(() => {
@@ -34,33 +65,28 @@ export function MinesweeperGame({
     }
   }, [dead]);
 
-  const adj = useMemo(() => {
-    const a = Array(size * size).fill(0);
-    for (let i = 0; i < size * size; i++) {
-      if (mineSet.has(i)) continue;
-      const r = Math.floor(i / size);
-      const c = i % size;
-      let n = 0;
-      for (let dr = -1; dr <= 1; dr++)
-        for (let dc = -1; dc <= 1; dc++) {
-          if (!dr && !dc) continue;
-          const nr = r + dr;
-          const nc = c + dc;
-          if (nr >= 0 && nr < size && nc >= 0 && nc < size && mineSet.has(nr * size + nc))
-            n++;
-        }
-      a[i] = n;
-    }
-    return a as number[];
-  }, [mineSet, size]);
+  const adj = useMemo(() => buildAdjacency(size, mineSet), [mineSet, size]);
 
-  const flood = (startIdx: number, rev: Set<number>) => {
+  useEffect(() => {
+    if (paused || completedRef.current) return;
+    const timer = window.setInterval(() => {
+      activeTimeMsRef.current += 100;
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [paused]);
+
+  const flood = (
+    startIdx: number,
+    rev: Set<number>,
+    activeMines: Set<number>,
+    activeAdjacency: number[],
+  ) => {
     const stack = [startIdx];
     while (stack.length) {
       const i = stack.pop()!;
-      if (rev.has(i) || mineSet.has(i)) continue;
+      if (rev.has(i) || activeMines.has(i)) continue;
       rev.add(i);
-      if (adj[i] !== 0) continue;
+      if (activeAdjacency[i] !== 0) continue;
       const r = Math.floor(i / size);
       const c = i % size;
       for (let dr = -1; dr <= 1; dr++)
@@ -82,7 +108,20 @@ export function MinesweeperGame({
     ) {
       return;
     }
-    if (mineSet.has(i)) {
+    let activeMines = mineSet;
+    let activeAdjacency = adj;
+    if (revealed.size === 0 && activeMines.has(i)) {
+      const relocated = new Set(activeMines);
+      relocated.delete(i);
+      const replacement = range(size * size).find(
+        (cell) => cell !== i && !relocated.has(cell),
+      );
+      if (replacement !== undefined) relocated.add(replacement);
+      activeMines = relocated;
+      activeAdjacency = buildAdjacency(size, relocated);
+      setMineSet(relocated);
+    }
+    if (activeMines.has(i)) {
       completedRef.current = true;
       sfx.lose(soundEnabled);
       setDead(true);
@@ -90,22 +129,42 @@ export function MinesweeperGame({
       onComplete({
         score: Math.round(revealed.size * 5 * difficultyMultiplier(difficulty)),
         won: false,
-        timeMs: Date.now() - start,
+        timeMs: activeTimeMsRef.current,
         difficulty,
       });
       return;
     }
     sfx.tap(soundEnabled);
     const next = new Set(revealed);
-    flood(i, next);
+    flood(i, next, activeMines, activeAdjacency);
     setRevealed(next);
     const safe = size * size - mines;
     if (next.size >= safe) {
       completedRef.current = true;
-      const timeMs = Date.now() - start;
+      const timeMs = activeTimeMsRef.current;
       const score = Math.max(
         100,
-        Math.round((1200 - timeMs / 40) * difficultyMultiplier(difficulty)),
+        Math.min(
+          1_400,
+          Math.round(
+            (difficulty === "easy"
+              ? 700
+              : difficulty === "medium"
+                ? 900
+                : 1_100) +
+              300 *
+                Math.max(
+                  0,
+                  1 -
+                    timeMs /
+                      (difficulty === "easy"
+                        ? 120_000
+                        : difficulty === "medium"
+                          ? 150_000
+                          : 180_000),
+                ),
+          ),
+        ),
       );
       onScoreChange?.(score);
       sfx.win(soundEnabled);

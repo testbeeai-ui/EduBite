@@ -22,6 +22,12 @@ type PledgeReelDay = {
   slides: PledgeReelSlide[];
 };
 
+const pledgeReelCache = new Map<string, PledgeReelDay>();
+
+function pledgeCacheKey(joinedDate: string, slot: "am" | "pm"): string {
+  return `${joinedDate}:${slot}`;
+}
+
 function renderPledgeHeadline(
   headline: string,
   emphasisWord: string,
@@ -58,7 +64,8 @@ export function ModalHost() {
         open={modal.pledge === "am"}
         onClose={closePledgeModal}
         onConfirm={() => {
-          closePledgeModal();
+          // Open reel in one step — do not call completePledge here
+          // (it was clearing reel: null and racing openReel).
           openReel("am");
         }}
       />
@@ -67,7 +74,6 @@ export function ModalHost() {
         open={modal.pledge === "pm"}
         onClose={closePledgeModal}
         onConfirm={() => {
-          closePledgeModal();
           openReel("pm");
         }}
       />
@@ -75,7 +81,12 @@ export function ModalHost() {
         type={modal.reel}
         open={modal.reel !== null}
         onClose={closeReel}
-        onComplete={() => modal.reel && completePledge(modal.reel)}
+        onComplete={() => {
+          if (modal.reel) completePledge(modal.reel);
+        }}
+        onSignWithoutReel={() => {
+          if (modal.reel) completePledge(modal.reel);
+        }}
       />
     </>
   );
@@ -92,12 +103,17 @@ function PledgeSignModal({
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  const [checked, setChecked] = useState(false);
+  const [checked, setChecked] = useState(true);
   const config = type === "am" ? PLEDGE_AM : PLEDGE_PM;
 
   useEffect(() => {
-    if (!open) setChecked(false);
+    if (open) setChecked(true);
   }, [open]);
+
+  const handleSignClick = () => {
+    if (!checked) setChecked(true);
+    onConfirm();
+  };
 
   return (
     <ModalOverlay open={open} onClose={onClose}>
@@ -112,17 +128,17 @@ function PledgeSignModal({
         >
           &ldquo;{config.quote}&rdquo;
         </blockquote>
-        <label className="flex items-center gap-2.5 mt-4 text-[12.5px] text-[var(--text-dim)] cursor-pointer">
+        <label className="flex items-center gap-2.5 mt-4 text-[12.5px] text-[var(--text-dim)] cursor-pointer select-none">
           <input
             type="checkbox"
             checked={checked}
             onChange={(e) => setChecked(e.target.checked)}
-            className={`w-[17px] h-[17px] ${type === "am" ? "accent-amber" : "accent-purple"}`}
+            className={`w-[17px] h-[17px] cursor-pointer ${type === "am" ? "accent-amber" : "accent-purple"}`}
           />
           I have read and mean this pledge
         </label>
         <div className="flex flex-col gap-2 mt-5">
-          <Button variant={type} disabled={!checked} onClick={onConfirm}>
+          <Button variant={type} onClick={handleSignClick}>
             {config.buttonLabel}
           </Button>
           <Button variant="ghost" onClick={onClose}>
@@ -139,11 +155,13 @@ function IntegrityReelModal({
   open,
   onClose,
   onComplete,
+  onSignWithoutReel,
 }: {
   type: PledgeType | null;
   open: boolean;
   onClose: () => void;
   onComplete: () => void;
+  onSignWithoutReel: () => void;
 }) {
   const { state } = useGame();
   const slot = type === "am" ? "am" : "pm";
@@ -153,7 +171,7 @@ function IntegrityReelModal({
   const total = REEL_DURATION_SEC;
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !type) {
       setElapsed(0);
       setReelDay(null);
       setLoadFailed(false);
@@ -165,6 +183,13 @@ function IntegrityReelModal({
     setLoadFailed(false);
     let cancelled = false;
 
+    const cacheKey = pledgeCacheKey(state.joinedDate, slot);
+    const cached = pledgeReelCache.get(cacheKey);
+    if (cached?.slides?.length === 4) {
+      setReelDay(cached);
+      return;
+    }
+
     void (async () => {
       try {
         const res = await fetch(
@@ -174,6 +199,7 @@ function IntegrityReelModal({
         if (!res.ok) throw new Error("Pledge reel request failed");
         const data = (await res.json()) as { reel?: PledgeReelDay };
         if (!cancelled && data.reel?.slides?.length === 4) {
+          pledgeReelCache.set(cacheKey, data.reel);
           setReelDay(data.reel);
           return;
         }
@@ -186,7 +212,7 @@ function IntegrityReelModal({
     return () => {
       cancelled = true;
     };
-  }, [open, state.joinedDate, slot]);
+  }, [open, type, state.joinedDate, slot]);
 
   useEffect(() => {
     if (!open || !reelDay) return;
@@ -212,13 +238,18 @@ function IntegrityReelModal({
             </h2>
             <p className="text-[12.5px] text-[var(--text-dim)] mt-3 leading-relaxed">
               {loadFailed
-                ? "Close this window and try again."
+                ? "You can still sign the pledge, or close and try again."
                 : "Getting the correct day for you."}
             </p>
             {loadFailed && (
-              <Button variant="ghost" className="mt-5" onClick={onClose}>
-                Close
-              </Button>
+              <div className="flex flex-col gap-2 mt-5 w-full">
+                <Button variant={type} onClick={onSignWithoutReel}>
+                  Sign pledge anyway →
+                </Button>
+                <Button variant="ghost" onClick={onClose}>
+                  Close
+                </Button>
+              </div>
             )}
           </div>
         </div>

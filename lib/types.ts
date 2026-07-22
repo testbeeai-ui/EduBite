@@ -8,7 +8,8 @@ export type AppView =
   | "habits"
   | "achievements"
   | "inspiration"
-  | "ai";
+  | "ai"
+  | "challenge";
 
 export type PledgeType = "am" | "pm";
 
@@ -25,6 +26,9 @@ export interface HabitDef {
   bg: string;
   name: string;
   sub: string;
+  desc: string;
+  benefits: string[];
+  rdm: number;
 }
 
 export interface HabitState extends HabitDef {
@@ -45,11 +49,13 @@ export interface Notification {
   text: string;
 }
 
+/** A calendar day counts toward streak only when all five are true. */
 export interface DayCriteria {
-  routine: boolean;
-  pledges: boolean;
+  dose: boolean;
+  funbrain: boolean;
+  puzzles: boolean;
   habits: boolean;
-  gyan: boolean;
+  pledges: boolean;
 }
 
 export type JourneyDayStatus = "join" | "past" | "today" | "upcoming";
@@ -86,6 +92,8 @@ export interface FunBrainState {
   combo: number;
   highScore: number;
   currentQuestionIndex: number;
+  /** Selected option index per question; null = unanswered / timed out. */
+  answers: (number | null)[];
   /** Session just ended (same as completed for UI). */
   finished: boolean;
   /** Marks today's sprint as completed; replay keeps RDM credit protected separately. */
@@ -112,6 +120,26 @@ export interface GameState {
   doseRdmCredited: number;
   /** RDM already credited from FunBrain today (prevents replay farming). */
   funbrainRdmCredited: number;
+  /** Today's puzzle attempt submitted (synced from puzzle progress). */
+  puzzleCompleted: boolean;
+  /**
+   * Per-day Daily Dose scores for Monthly Challenge (80%+ streak).
+   * Keyed by YYYY-MM-DD. Kept across day rolls.
+   */
+  doseDayLog: Record<string, DoseDayRecord>;
+  /** Month key (YYYY-MM) the user enrolled in during days 1–5. */
+  challengeEnrolledMonthKey: string | null;
+  /** Month key if they already submitted this month's final puzzle. */
+  challengePuzzleSubmittedMonthKey: string | null;
+}
+
+export interface DoseDayRecord {
+  correct: number;
+  total: number;
+  /** 0–100 */
+  pct: number;
+  completed: boolean;
+  classLevel: "11" | "12";
 }
 
 export interface AchievementDef {

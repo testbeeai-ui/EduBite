@@ -2,26 +2,162 @@ import { ORIGINAL_PUZZLES, PUZZLES } from "@/data/puzzles/catalog";
 import type { PuzzleDef } from "@/lib/puzzles/types";
 import { addDaysToKey, todayKey } from "@/lib/utils";
 
+const DAY_MS = 24 * 60 * 60 * 1_000;
+const COMPETITIVE_LAUNCH_ORDINAL = Math.floor(
+  Date.UTC(2026, 6, 20) / DAY_MS,
+);
+const FIRST_LAUNCH_PUZZLE_ID = "competitive-s1-q1";
+const SHUFFLE_VERSION = "edubite-puzzle-cycle-v1";
+const puzzleCycleCache = new Map<number, PuzzleDef[]>();
+
+function hashSeed(value: string): number {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return hash >>> 0;
+}
+
+function seededRandom(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state += 0x6d2b79f5;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
+  };
+}
+
+function seededShuffle<T>(items: readonly T[], seed: number): T[] {
+  const shuffled = [...items];
+  const random = seededRandom(seed);
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [
+      shuffled[swapIndex]!,
+      shuffled[index]!,
+    ];
+  }
+  return shuffled;
+}
+
+function mixByTopic(
+  puzzles: readonly PuzzleDef[],
+  seed: number,
+  previousTopic: string | null,
+): PuzzleDef[] {
+  const shuffled = seededShuffle(puzzles, seed);
+  const groups = new Map<string, PuzzleDef[]>();
+  for (const puzzle of shuffled) {
+    const group = groups.get(puzzle.topic) ?? [];
+    group.push(puzzle);
+    groups.set(puzzle.topic, group);
+  }
+
+  const topicOrder = seededShuffle(
+    [...groups.keys()],
+    seed ^ 0x9e3779b9,
+  );
+  const random = seededRandom(seed ^ 0x85ebca6b);
+  const mixed: PuzzleDef[] = [];
+  let lastTopic = previousTopic;
+
+  while (mixed.length < puzzles.length) {
+    const availableTopics = topicOrder.filter(
+      (topic) => (groups.get(topic)?.length ?? 0) > 0,
+    );
+    const differentTopics = availableTopics.filter(
+      (topic) => topic !== lastTopic,
+    );
+    const candidates =
+      differentTopics.length > 0 ? differentTopics : availableTopics;
+    const remainingAfterPick = puzzles.length - mixed.length - 1;
+    const feasibleCandidates = candidates.filter((candidate) => {
+      const candidateRemaining =
+        (groups.get(candidate)?.length ?? 0) - 1;
+      const largestOtherGroup = Math.max(
+        0,
+        ...availableTopics
+          .filter((topic) => topic !== candidate)
+          .map((topic) => groups.get(topic)?.length ?? 0),
+      );
+      return (
+        candidateRemaining <= Math.floor(remainingAfterPick / 2) &&
+        largestOtherGroup <= Math.ceil(remainingAfterPick / 2)
+      );
+    });
+    const selectionPool =
+      feasibleCandidates.length > 0 ? feasibleCandidates : candidates;
+    const totalWeight = selectionPool.reduce(
+      (total, topic) => total + (groups.get(topic)?.length ?? 0),
+      0,
+    );
+    let roll = random() * totalWeight;
+    const selectedTopic =
+      selectionPool.find((topic) => {
+        roll -= groups.get(topic)?.length ?? 0;
+        return roll < 0;
+      }) ?? selectionPool[selectionPool.length - 1];
+    if (!selectedTopic) break;
+    const selected = groups.get(selectedTopic)?.shift();
+    if (!selected) break;
+    mixed.push(selected);
+    lastTopic = selected.topic;
+  }
+
+  return mixed;
+}
+
+function puzzleCycle(cycleIndex: number): PuzzleDef[] {
+  const cached = puzzleCycleCache.get(cycleIndex);
+  if (cached) return cached;
+
+  let previousTopic: string | null = null;
+  if (cycleIndex > 0) {
+    const previousCycle = puzzleCycle(cycleIndex - 1);
+    previousTopic = previousCycle[previousCycle.length - 1]?.topic ?? null;
+  }
+
+  const seed = hashSeed(`${SHUFFLE_VERSION}:${cycleIndex}`);
+  let cycle: PuzzleDef[];
+  if (cycleIndex === 0) {
+    const launchPuzzle = PUZZLES.find(
+      (puzzle) => puzzle.id === FIRST_LAUNCH_PUZZLE_ID,
+    );
+    if (!launchPuzzle) {
+      throw new Error("Launch puzzle is missing from the puzzle catalog");
+    }
+    const remaining = PUZZLES.filter(
+      (puzzle) => puzzle.id !== launchPuzzle.id,
+    );
+    cycle = [
+      launchPuzzle,
+      ...mixByTopic(remaining, seed, launchPuzzle.topic),
+    ];
+  } else {
+    cycle = mixByTopic(PUZZLES, seed, previousTopic);
+  }
+
+  puzzleCycleCache.set(cycleIndex, cycle);
+  return cycle;
+}
+
 /** Deterministic daily pick so every user shares the same puzzle of the day. */
 export function puzzleForDate(dateKey: string): PuzzleDef {
   const [y, m, d] = dateKey.split("-").map(Number);
-  const ordinal = Math.floor(
-    Date.UTC(y, m - 1, d) / (24 * 60 * 60 * 1000),
-  );
-  const competitiveLaunchOrdinal = Math.floor(
-    Date.UTC(2026, 6, 20) / (24 * 60 * 60 * 1000),
-  );
-  if (ordinal < competitiveLaunchOrdinal) {
+  const ordinal = Math.floor(Date.UTC(y, m - 1, d) / DAY_MS);
+  if (ordinal < COMPETITIVE_LAUNCH_ORDINAL) {
     const legacyIndex =
       ((ordinal % ORIGINAL_PUZZLES.length) + ORIGINAL_PUZZLES.length) %
       ORIGINAL_PUZZLES.length;
     return ORIGINAL_PUZZLES[legacyIndex]!;
   }
-  const daysSinceLaunch = ordinal - competitiveLaunchOrdinal;
-  const firstCompetitiveIndex = ORIGINAL_PUZZLES.length;
-  return PUZZLES[
-    (firstCompetitiveIndex + daysSinceLaunch) % PUZZLES.length
-  ]!;
+  const daysSinceLaunch = ordinal - COMPETITIVE_LAUNCH_ORDINAL;
+  const cycleIndex = Math.floor(daysSinceLaunch / PUZZLES.length);
+  const dayInCycle = daysSinceLaunch % PUZZLES.length;
+  return puzzleCycle(cycleIndex)[dayInCycle]!;
 }
 
 export function todayPuzzle(): PuzzleDef {

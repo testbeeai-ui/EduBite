@@ -8,6 +8,8 @@ export const runtime = "nodejs";
 /** Public content tables — readable with anon key (no session). */
 const PUBLIC_TABLES = [
   "edubite_inspiration_quotes",
+  "edubite_inspiration_phenomena",
+  "edubite_inspiration_role_models",
   "edubite_inspiration_blocks",
   "edubite_pledge_reel_days",
   "edubite_pledge_reel_slides",

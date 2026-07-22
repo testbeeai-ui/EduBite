@@ -49,6 +49,59 @@ type SchedulePayload = {
       topic: string;
     }[];
   };
+  inspiration: {
+    totals: { quotes: number; phenomena: number; roleModels: number };
+    quote: {
+      contentKey: string;
+      category: string;
+      quote: string;
+    };
+    roleModel: {
+      contentKey: string;
+      volume: number;
+      number: number;
+      index: string;
+      avatar: string;
+      name: string;
+      tag: string;
+      quote: string;
+      bio: string;
+      inspireWhy: string;
+      pcmConnections: string;
+    };
+    phenomenon: {
+      contentKey: string;
+      volume: number;
+      number: number;
+      subject: string;
+      icon: string;
+      badge: string;
+      question: string;
+      explanation: string;
+      linkedConcepts: string;
+      followUpQuestion: string;
+      source: string;
+    };
+    upcoming: {
+      dateKey: string;
+      quote: { contentKey: string; category: string; quote: string };
+      phenomenon: {
+        contentKey: string;
+        volume: number;
+        number: number;
+        subject: string;
+        badge: string;
+        question: string;
+      };
+      roleModel: {
+        contentKey: string;
+        index: string;
+        name: string;
+        tag: string;
+        quote: string;
+      };
+    }[];
+  };
   pledges: {
     am: { title: string; quote: string; time: string };
     pm: { title: string; quote: string; time: string };
@@ -68,7 +121,28 @@ type SchedulePayload = {
   };
 };
 
-type Mode = "pledges" | "puzzles";
+type Mode = "pledges" | "puzzles" | "inspiration";
+
+const MODE_COPY: Record<
+  Mode,
+  { title: string; subtitle: string }
+> = {
+  pledges: {
+    title: "AI Pledges",
+    subtitle:
+      "Preview which reel day and slides show for a calendar date and join date. Content is file-driven (not editable here).",
+  },
+  puzzles: {
+    title: "Puzzles",
+    subtitle:
+      "Preview the shared daily puzzle for any date (UTC-day rotation). Answers unlock the next calendar day.",
+  },
+  inspiration: {
+    title: "Inspiration",
+    subtitle:
+      "Preview Quote of the Day, Role Model of the Day, and Natural Phenomena for any date. All three use deterministic cycles from the Supabase catalogs (185 quotes · 90 role models · 180 phenomena).",
+  },
+};
 
 export function SchedulePreviewPanel({ mode }: { mode: Mode }) {
   const [dateKey, setDateKey] = useState(todayKey());
@@ -105,12 +179,10 @@ export function SchedulePreviewPanel({ mode }: { mode: Mode }) {
     <div className="space-y-5">
       <div>
         <h2 className="font-display font-bold text-xl">
-          {mode === "pledges" ? "AI Pledges" : "Puzzles"}
+          {MODE_COPY[mode].title}
         </h2>
         <p className="text-sm text-[var(--text-dim)] mt-1">
-          {mode === "pledges"
-            ? "Preview which reel day and slides show for a calendar date and join date. Content is file-driven (not editable here)."
-            : "Preview the shared daily puzzle for any date (UTC-day rotation). Answers unlock the next calendar day."}
+          {MODE_COPY[mode].subtitle}
         </p>
       </div>
 
@@ -204,18 +276,30 @@ export function SchedulePreviewPanel({ mode }: { mode: Mode }) {
             </div>
             <div className="text-xs text-[var(--text-dim)] space-y-1.5 font-mono">
               <div>
-                Class 11 PCM: <span className="text-teal font-semibold">{data.dailydose.class11.source}</span> ({data.dailydose.class11.questions.length} Qs)
+                Class 11 PCM:{" "}
+                <span className="text-teal font-semibold">
+                  {data.dailydose.class11.source}
+                </span>{" "}
+                ({data.dailydose.class11.questions.length} Qs)
               </div>
               <div>
-                Class 12 PCM: <span className="text-teal font-semibold">{data.dailydose.class12.source}</span> ({data.dailydose.class12.questions.length} Qs)
+                Class 12 PCM:{" "}
+                <span className="text-teal font-semibold">
+                  {data.dailydose.class12.source}
+                </span>{" "}
+                ({data.dailydose.class12.questions.length} Qs)
               </div>
               <div>
-                FunBrain: <span className="text-teal font-semibold">{data.funbrain.source}</span> ({data.funbrain.questions.length} Qs)
+                FunBrain:{" "}
+                <span className="text-teal font-semibold">
+                  {data.funbrain.source}
+                </span>{" "}
+                ({data.funbrain.questions.length} Qs)
               </div>
             </div>
           </Card>
         </div>
-      ) : (
+      ) : mode === "puzzles" ? (
         <div className="space-y-4">
           <Card>
             <div className="font-mono text-[11px] text-teal">
@@ -276,6 +360,159 @@ export function SchedulePreviewPanel({ mode }: { mode: Mode }) {
                   <span className="text-[var(--text-dim)] text-[11px]">
                     {p.grade} · {p.topic}
                   </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <Card>
+            <div className="font-mono text-[11px] text-amber">
+              Catalog · {data.inspiration.totals.quotes} quotes ·{" "}
+              {data.inspiration.totals.roleModels} role models ·{" "}
+              {data.inspiration.totals.phenomena} phenomena
+            </div>
+          </Card>
+
+          <Card className="text-center py-8 px-6 bg-gradient-to-br from-[rgba(232,196,104,0.1)] to-[var(--surface)] border-[rgba(232,196,104,0.25)]">
+            <div className="font-mono text-[11px] text-[var(--text-dim)]">
+              Quote of the day · {data.inspiration.quote.category} ·{" "}
+              {data.inspiration.quote.contentKey}
+            </div>
+            <p className="font-display font-semibold text-[18px] leading-snug mt-3 max-w-2xl mx-auto">
+              {data.inspiration.quote.quote}
+            </p>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-[rgba(232,196,104,0.08)] to-[var(--surface)] border-[rgba(232,196,104,0.3)]">
+            <div className="flex gap-3.5 items-start">
+              <span className="text-2xl" aria-hidden="true">
+                {data.inspiration.roleModel.avatar}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="font-mono text-[10px] text-amber tracking-wider">
+                  Role model of the day · #{data.inspiration.roleModel.index} ·
+                  v{data.inspiration.roleModel.volume} ·{" "}
+                  {data.inspiration.roleModel.contentKey}
+                </div>
+                <h3 className="font-display font-bold text-[18px] mt-1.5 leading-snug">
+                  {data.inspiration.roleModel.name}
+                </h3>
+                <p className="text-[12px] text-[var(--text-dim)] mt-1">
+                  {data.inspiration.roleModel.tag}
+                </p>
+                <p className="font-display italic text-[14px] mt-3 leading-snug text-[var(--text)]">
+                  “{data.inspiration.roleModel.quote}”
+                </p>
+              </div>
+            </div>
+            <div className="mt-[18px] bg-[var(--surface-2)] border border-[var(--line)] rounded-2xl p-4 space-y-3">
+              <div>
+                <div className="font-display font-bold text-[12.5px] text-amber">
+                  Bio
+                </div>
+                <p className="whitespace-pre-line text-[13px] text-[var(--text-dim)] mt-1.5 leading-relaxed">
+                  {data.inspiration.roleModel.bio}
+                </p>
+              </div>
+              <div className="pt-3 border-t border-[var(--line)] space-y-3">
+                <p className="text-[12.5px] leading-relaxed text-[var(--text-dim)]">
+                  <span className="font-display font-bold text-[var(--text)]">
+                    Why this inspires ·{" "}
+                  </span>
+                  {data.inspiration.roleModel.inspireWhy}
+                </p>
+                <div className="rounded-xl border border-amber/20 bg-amber/5 px-3.5 py-3">
+                  <p className="text-[12.5px] leading-relaxed text-[var(--text-dim)]">
+                    <span className="font-display font-bold text-amber">
+                      PCM connections ·{" "}
+                    </span>
+                    {data.inspiration.roleModel.pcmConnections}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="bg-gradient-to-br from-blue/10 to-[var(--surface)] border-blue/25">
+            <div className="flex gap-3.5 items-start">
+              <span className="text-2xl" aria-hidden="true">
+                {data.inspiration.phenomenon.icon}
+              </span>
+              <div>
+                <div className="font-mono text-[10px] text-blue tracking-wider">
+                  {data.inspiration.phenomenon.badge} ·{" "}
+                  {data.inspiration.phenomenon.subject} · v
+                  {data.inspiration.phenomenon.volume}
+                </div>
+                <h3 className="font-display font-bold text-[16.5px] mt-1.5 leading-snug">
+                  {data.inspiration.phenomenon.question}
+                </h3>
+              </div>
+            </div>
+            <div className="mt-[18px] bg-[var(--surface-2)] border border-[var(--line)] rounded-2xl p-4 space-y-3">
+              <div>
+                <div className="font-display font-bold text-[12.5px] text-amber">
+                  Answer
+                </div>
+                <p className="whitespace-pre-line text-[13px] text-[var(--text-dim)] mt-1.5 leading-relaxed">
+                  {data.inspiration.phenomenon.explanation}
+                </p>
+              </div>
+              <div className="pt-3 border-t border-[var(--line)] space-y-3">
+                <p className="text-[12.5px] leading-relaxed text-[var(--text-dim)]">
+                  <span className="font-display font-bold text-[var(--text)]">
+                    Linked concepts:{" "}
+                  </span>
+                  {data.inspiration.phenomenon.linkedConcepts}
+                </p>
+                <div className="rounded-xl border border-blue/20 bg-blue/5 px-3.5 py-3">
+                  <p className="text-[12.5px] leading-relaxed text-[var(--text-dim)]">
+                    <span className="font-display font-bold text-blue">
+                      Follow-up question:{" "}
+                    </span>
+                    {data.inspiration.phenomenon.followUpQuestion}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="font-mono text-[10px] text-[var(--text-dim)] mt-3">
+              {data.inspiration.phenomenon.contentKey} ·{" "}
+              {data.inspiration.phenomenon.source}
+            </div>
+          </Card>
+
+          <Card>
+            <div className="font-mono text-[11px] text-[var(--text-dim)] mb-3">
+              Next 14 days from preview date
+            </div>
+            <ul className="space-y-3">
+              {data.inspiration.upcoming.map((day) => (
+                <li
+                  key={day.dateKey}
+                  className="border-b border-[var(--line)] pb-3 last:border-b-0 last:pb-0"
+                >
+                  <div className="font-mono text-[11px] text-teal">
+                    {day.dateKey}
+                  </div>
+                  <div className="text-sm mt-1">
+                    <span className="text-[var(--text-dim)]">Quote · </span>
+                    {day.quote.category}: {day.quote.quote}
+                  </div>
+                  <div className="text-sm mt-1">
+                    <span className="text-[var(--text-dim)]">
+                      Role model · #{day.roleModel.index} ·{" "}
+                    </span>
+                    {day.roleModel.name} — {day.roleModel.tag}
+                  </div>
+                  <div className="text-sm mt-1">
+                    <span className="text-[var(--text-dim)]">
+                      Phenomena · {day.phenomenon.subject} ·{" "}
+                      {day.phenomenon.badge} ·{" "}
+                    </span>
+                    {day.phenomenon.question}
+                  </div>
                 </li>
               ))}
             </ul>

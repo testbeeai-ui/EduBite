@@ -39,11 +39,18 @@ export async function writeNormalizedGameState(
   state: GameState,
 ): Promise<GameState> {
   const incoming = normalizeGameState(state);
-  const existing = await readNormalizedGameStateRaw(userId);
+  const client = await sb();
+  const { data: existingRow, error: readError } = await client
+    .from(EDUBITE_GAME_STATE_TABLE)
+    .select("payload")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (readError) throw new Error(readError.message);
+
   let normalized = incoming;
-  if (existing) {
+  if (existingRow?.payload) {
     try {
-      const prev = normalizeGameState(existing);
+      const prev = normalizeGameState(existingRow.payload as unknown);
       normalized = {
         ...incoming,
         rdm: Math.max(incoming.rdm, prev.rdm),
@@ -78,13 +85,16 @@ export async function writeNormalizedGameState(
           incoming.lastActiveDate === prev.lastActiveDate
             ? Math.max(incoming.funbrainRdmCredited, prev.funbrainRdmCredited)
             : incoming.funbrainRdmCredited,
+        puzzleCompleted:
+          incoming.lastActiveDate === prev.lastActiveDate
+            ? incoming.puzzleCompleted || prev.puzzleCompleted
+            : incoming.puzzleCompleted,
       };
     } catch {
       normalized = incoming;
     }
   }
 
-  const client = await sb();
   const { error } = await client.from(EDUBITE_GAME_STATE_TABLE).upsert(
     {
       user_id: userId,
@@ -95,19 +105,6 @@ export async function writeNormalizedGameState(
   );
   if (error) throw new Error(error.message);
   return normalized;
-}
-
-async function readNormalizedGameStateRaw(
-  userId: string,
-): Promise<unknown | null> {
-  const client = await sb();
-  const { data, error } = await client
-    .from(EDUBITE_GAME_STATE_TABLE)
-    .select("payload")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data?.payload ?? null;
 }
 
 export async function readNormalizedBrainGym(

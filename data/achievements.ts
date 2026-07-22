@@ -6,13 +6,13 @@ export const ACHIEVEMENT_DEFINITIONS: AchievementDef[] = [
     id: "streak-7",
     icon: "🔥",
     title: "7-Day Streak",
-    desc: "Complete all four streak criteria for 7 days straight.",
+    desc: "Complete Daily Dose, Fun Brain, Puzzles, Habits, and Pledge for 7 days straight.",
   },
   {
     id: "streak-30",
     icon: "🚀",
     title: "30-Day Streak",
-    desc: "A full month without missing a beat.",
+    desc: "A full month of all five daily activities without missing a beat.",
   },
   {
     id: "rdm-1000",

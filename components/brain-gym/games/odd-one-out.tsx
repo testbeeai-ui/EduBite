@@ -53,6 +53,27 @@ const CATEGORIES: Record<string, string[]> = {
 };
 
 const CATEGORY_KEYS = Object.keys(CATEGORIES);
+const CATEGORY_FAMILIES: Record<string, string> = {
+  fruits: "produce",
+  fruitsExotic: "produce",
+  vegetables: "produce",
+  animals: "animals",
+  birds: "animals",
+  insects: "animals",
+  reptiles: "animals",
+  seaLife: "ocean",
+  marine: "ocean",
+  ocean: "ocean",
+  vehicles: "transport",
+  transport: "transport",
+  airSpace: "transport",
+  office: "stationery",
+  stationery: "stationery",
+};
+
+function categoryFamily(category: string): string {
+  return CATEGORY_FAMILIES[category] ?? category;
+}
 
 function pickRandomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]!;
@@ -74,7 +95,10 @@ function generateRound(): { items: string[]; odd: string } {
 
   let oddKey = pickRandomFrom(CATEGORY_KEYS);
   let oddEmoji = pickRandomFrom(CATEGORIES[oddKey]!);
-  while (oddKey === mainKey || mainEmojis.includes(oddEmoji)) {
+  while (
+    categoryFamily(oddKey) === categoryFamily(mainKey) ||
+    mainEmojis.includes(oddEmoji)
+  ) {
     oddKey = pickRandomFrom(CATEGORY_KEYS);
     oddEmoji = pickRandomFrom(CATEGORIES[oddKey]!);
   }

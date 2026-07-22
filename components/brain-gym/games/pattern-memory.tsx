@@ -30,16 +30,22 @@ export function PatternMemoryGame({
   const completedRef = useRef(false);
   const { schedule } = usePausableScheduler(paused);
 
-  const gen = () => {
-    const p = new Set(shuffle(range(cells)).slice(0, count + round - 1));
+  const gen = (targetRound: number) => {
+    const roundCount = Math.min(
+      cells,
+      count + Math.floor((targetRound - 1) / 2),
+    );
+    const p = new Set(shuffle(range(cells)).slice(0, roundCount));
     setPattern(p);
     setSelected(new Set());
     setShow(true);
-    schedule(() => setShow(false), difficulty === "hard" ? 900 : 1400);
+    const studyMs =
+      difficulty === "easy" ? 1_800 : difficulty === "medium" ? 1_500 : 1_200;
+    schedule(() => setShow(false), studyMs);
   };
 
   useEffect(() => {
-    gen();
+    gen(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -55,7 +61,7 @@ export function PatternMemoryGame({
   };
 
   const submit = () => {
-    if (paused || show) return;
+    if (paused || show || completedRef.current) return;
     const ok =
       selected.size === pattern.size &&
       [...selected].every((i) => pattern.has(i));
@@ -69,7 +75,7 @@ export function PatternMemoryGame({
         onComplete({ score: ns, won: true, timeMs: Date.now() - start, difficulty });
       } else {
         setRound((r) => r + 1);
-        schedule(gen, 400);
+        schedule(() => gen(round + 1), 400);
       }
     } else {
       sfx.wrong(soundEnabled);
@@ -79,7 +85,7 @@ export function PatternMemoryGame({
       if (nl <= 0) {
         completedRef.current = true;
         onComplete({ score, won: false, timeMs: Date.now() - start, difficulty });
-      } else schedule(gen, 400);
+      } else schedule(() => gen(round), 400);
     }
   };
 

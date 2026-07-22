@@ -55,7 +55,7 @@ export function TopNav({ activeView, onNavigate }: TopNavProps) {
   return (
     <nav
       aria-label="Primary"
-      className="hidden md:flex items-center gap-0.5 flex-1 min-w-0 overflow-x-auto overscroll-x-contain scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="hidden md:flex items-center gap-1 flex-1 min-w-0 overflow-x-auto overscroll-x-contain scrollbar-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden py-0.5 px-0.5"
     >
       {NAV_ITEMS.map((item) => {
         const active = activeView === item.id;
@@ -70,7 +70,7 @@ export function TopNav({ activeView, onNavigate }: TopNavProps) {
             onClick={() => onNavigate(item.id as AppView)}
             className={cn(
               "relative flex items-center gap-1.5 rounded-full shrink-0 transition-colors duration-150",
-              "px-2 py-[7px] lg:px-2.5",
+              "px-2 py-[5px] lg:px-2.5 lg:py-[6px]",
               "text-[11px] lg:text-xs font-semibold",
               active
                 ? "text-[var(--text)]"
@@ -86,11 +86,23 @@ export function TopNav({ activeView, onNavigate }: TopNavProps) {
             ) : null}
             <span className="relative z-10 flex items-center gap-1.5">
               <NavEmoji emoji={item.emoji} accent={item.accent} active={active} />
-              {/* md–lg: short / terse label; xl+: full label */}
-              <span className="relative z-10 hidden lg:inline xl:hidden">
+              {/* Show label: active item always shows short label on md/lg and full on 2xl; inactive shows short on xl */}
+              <span
+                className={cn(
+                  "relative z-10 whitespace-nowrap",
+                  active ? "inline 2xl:hidden" : "hidden xl:inline 2xl:hidden",
+                )}
+              >
                 {short}
               </span>
-              <span className="relative z-10 hidden xl:inline">{item.label}</span>
+              <span
+                className={cn(
+                  "relative z-10 whitespace-nowrap hidden",
+                  "2xl:inline",
+                )}
+              >
+                {item.label}
+              </span>
             </span>
             {active ? (
               <span className="absolute bottom-0 left-1/2 z-10 h-[2px] w-3.5 -translate-x-1/2 rounded-full bg-teal" />

@@ -38,8 +38,12 @@ export function FunBrainView() {
   }
 
   if (doneForToday && !fb.running) {
+    const answeredCorrect = pool.filter(
+      (item, idx) => fb.answers[idx] === item.correct,
+    ).length;
+
     return (
-      <div>
+      <div className="space-y-5 pb-8">
         <ViewHeader
           eyebrow="Function 02"
           title="FunBrain"
@@ -49,6 +53,11 @@ export function FunBrainView() {
           <div className="font-display font-extrabold text-3xl text-teal">
             Score: {fb.score}
           </div>
+          {pool.length > 0 && (
+            <p className="text-[var(--text-dim)] text-sm mt-1.5">
+              {answeredCorrect} of {pool.length} correct
+            </p>
+          )}
           <p className="text-[var(--text-dim)] text-sm mt-2">
             One FunBrain sprint per day. Come back tomorrow for the next set.
           </p>
@@ -84,6 +93,89 @@ export function FunBrainView() {
             </Button>
           </div>
         </Card>
+
+        {pool.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="font-display font-bold text-base text-[var(--text)] px-1">
+              Review answers
+            </h3>
+            {pool.map((item, idx) => {
+              const selectedIdx = fb.answers[idx];
+              const hasAnswer =
+                selectedIdx !== undefined && selectedIdx !== null;
+              const isCorrect = hasAnswer && selectedIdx === item.correct;
+
+              return (
+                <Card
+                  key={`funbrain-review-${idx}`}
+                  className="border border-[var(--line)] p-4 space-y-3"
+                >
+                  <div className="flex justify-between items-center gap-2 text-xs font-mono">
+                    <span className="text-[var(--text-dim)] text-[10px]">
+                      Question {idx + 1}
+                      {item.tag ? ` · ${item.tag}` : ""}
+                    </span>
+                    {!hasAnswer ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider bg-[var(--surface-2)] text-[var(--text-dim)] border border-[var(--line)]">
+                        Unanswered
+                      </span>
+                    ) : isCorrect ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider bg-teal/10 text-teal border border-teal/20">
+                        Correct
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider bg-pink/10 text-pink border border-pink/20">
+                        Incorrect
+                      </span>
+                    )}
+                  </div>
+
+                  <h4 className="text-sm font-semibold text-[var(--text)] leading-snug">
+                    {item.q}
+                  </h4>
+
+                  <div className="space-y-2 text-xs">
+                    {item.opts.map((opt, oIdx) => {
+                      const isUserSelection = selectedIdx === oIdx;
+                      const isCorrectOption = oIdx === item.correct;
+
+                      return (
+                        <div
+                          key={`${idx}-${oIdx}`}
+                          className={cn(
+                            "flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl border",
+                            isCorrectOption
+                              ? "border-teal/30 bg-teal/5 text-teal"
+                              : isUserSelection && !isCorrect
+                                ? "border-pink/30 bg-pink/5 text-pink"
+                                : "border-[var(--line)] bg-[var(--surface-2)] text-[var(--text-dim)]",
+                          )}
+                        >
+                          <div className="flex items-start gap-2 min-w-0">
+                            <span className="font-mono text-[10px] opacity-65 shrink-0">
+                              {oIdx + 1}.
+                            </span>
+                            <span className="leading-snug">{opt}</span>
+                          </div>
+                          {isCorrectOption ? (
+                            <span className="shrink-0 text-[10px] font-bold text-teal font-mono">
+                              Correct
+                            </span>
+                          ) : null}
+                          {isUserSelection && !isCorrect ? (
+                            <span className="shrink-0 text-[10px] font-bold text-pink font-mono">
+                              Your pick
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }

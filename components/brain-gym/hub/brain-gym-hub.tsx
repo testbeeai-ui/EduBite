@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { Search, Star, Trophy, Flame, LayoutGrid } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -204,13 +204,8 @@ export function BrainGymHub() {
 
             <Section title={`All games (${filtered.length})`}>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {filtered.map((g, i) => (
-                  <motion.div
-                    key={g.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: Math.min(i * 0.02, 0.3) }}
-                  >
+                {filtered.map((g) => (
+                  <div key={g.id}>
                     <GameTile
                       id={g.id}
                       fav={!!progress.games[g.id]?.favorite}
@@ -219,7 +214,7 @@ export function BrainGymHub() {
                       onFav={() => toggleFav(g.id)}
                       detailed
                     />
-                  </motion.div>
+                  </div>
                 ))}
               </div>
             </Section>
