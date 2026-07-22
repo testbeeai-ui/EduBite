@@ -37,16 +37,35 @@
 
 html {
   scroll-behavior: smooth;
+  background: var(--bg);
 }
 
 body {
-  background:
-    radial-gradient(60% 40% at 12% 0%, rgba(167, 139, 250, 0.1), transparent 60%),
-    radial-gradient(50% 35% at 92% 8%, rgba(45, 212, 191, 0.08), transparent 60%),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
   font-family: var(--font-body), system-ui, sans-serif;
   min-height: 100vh;
+  position: relative;
+}
+
+/* Soft top glow only — keeps the student-facing mood without a colored empty footer */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: min(62vh, 640px);
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(60% 50% at 12% 0%, rgba(167, 139, 250, 0.12), transparent 68%),
+    radial-gradient(50% 45% at 92% 0%, rgba(45, 212, 191, 0.1), transparent 65%);
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
 }
 
 ::-webkit-scrollbar {
@@ -71,5 +90,36 @@ body {
 @media (hover: hover) {
   .hover-lift:hover {
     transform: translateY(-2px);
+  }
+}
+
+@keyframes habitToast {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  18% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  75% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes habitChipPulse {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
   }
 }

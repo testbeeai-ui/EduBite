@@ -109,8 +109,8 @@ export function DailyDoseView() {
             {earned} RDM earned today
           </div>
           <p className="text-[var(--text-dim)] mt-2 text-sm">
-            {dose.correct} of {questions.length} correct today. Come back
-            tomorrow to keep the streak.
+            {dose.correct} of {questions.length} correct today. Finish Fun Brain,
+            Puzzles, Habits, and Pledge too to count today toward your streak.
           </p>
           <p className="text-[var(--text-dim)] mt-5 text-sm leading-relaxed max-w-md mx-auto">
             For more DailyDose practice, go to{" "}

@@ -3,7 +3,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { sfx } from "@/lib/brain-gym/utils/sound";
-import { difficultyMultiplier } from "@/lib/brain-gym/storage";
 import { cn } from "@/lib/utils";
 import { shuffle } from "@/lib/brain-gym/utils/shuffle";
 import { motion, AnimatePresence } from "framer-motion";
@@ -29,6 +28,28 @@ function formatTime(ms: number): string {
   const m = Math.floor(secs / 60);
   const s = secs % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+export function isValidCompletedSudoku(grid: number[]): boolean {
+  if (grid.length !== 16) return false;
+  const validGroup = (values: number[]) =>
+    [...values].sort((a, b) => a - b).join(",") === "1,2,3,4";
+
+  for (let index = 0; index < 4; index++) {
+    const row = grid.slice(index * 4, index * 4 + 4);
+    const column = [0, 1, 2, 3].map((rowIndex) => grid[rowIndex * 4 + index]!);
+    if (!validGroup(row) || !validGroup(column)) return false;
+  }
+  for (const start of [0, 2, 8, 10]) {
+    const box = [
+      grid[start]!,
+      grid[start + 1]!,
+      grid[start + 4]!,
+      grid[start + 5]!,
+    ];
+    if (!validGroup(box)) return false;
+  }
+  return true;
 }
 
 /** Mini 4×4 Sudoku (digits 1–4). */
@@ -290,14 +311,15 @@ export function SudokuGame({
       return;
     }
 
-    const wrongs: number[] = [];
-    for (let i = 0; i < 16; i++) {
-      if (grid[i] !== solution[i]) {
-        wrongs.push(i);
-      }
-    }
+    const validSolution = isValidCompletedSudoku(grid);
+    const wrongs = validSolution
+      ? []
+      : grid.reduce<number[]>((indices, value, index) => {
+          if (value !== solution[index]) indices.push(index);
+          return indices;
+        }, []);
 
-    if (wrongs.length === 0) {
+    if (validSolution) {
       // Puzzle Solved successfully!
       setWon(true);
       sfx.win(soundEnabled);
@@ -313,12 +335,20 @@ export function SudokuGame({
       }));
       setParticles(newParticles);
 
-      // Score evaluation (capped min at 80)
-      const penalty = mistakes * 60 + hintsUsed * 40;
+      const targetMs =
+        difficulty === "easy"
+          ? 180_000
+          : difficulty === "medium"
+            ? 240_000
+            : 300_000;
+      const base =
+        difficulty === "easy" ? 700 : difficulty === "medium" ? 850 : 1_000;
+      const speedBonus = 300 * Math.max(0, 1 - elapsedTime / targetMs);
       const score = Math.max(
-        80,
-        Math.round(
-          (1000 - elapsedTime / 40 - penalty) * difficultyMultiplier(difficulty),
+        100,
+        Math.min(
+          1_300,
+          Math.round(base + speedBonus - mistakes * 100 - hintsUsed * 150),
         ),
       );
       setFinalScore(score);
@@ -1073,14 +1103,7 @@ export function SudokuGame({
                 type="button"
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
-                onClick={() => {
-                  onComplete({
-                    score: finalScore,
-                    won: true,
-                    timeMs: elapsedTime,
-                    difficulty,
-                  });
-                }}
+                onClick={() => setShowStatsModal(false)}
                 className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 font-display font-black text-sm tracking-wider uppercase border border-teal-400 shadow-[0_6px_20px_rgba(20,184,166,0.3)] cursor-pointer"
               >
                 Continue

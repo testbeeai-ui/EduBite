@@ -1,21 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import { AdminProfilePanel } from "@/components/admin/admin-profile-panel";
 import { QuestionsAdminPanel } from "@/components/admin/questions-admin-panel";
 import { SchedulePreviewPanel } from "@/components/admin/schedule-preview-panel";
 import { cn } from "@/lib/utils";
 
 const TABS = [
+  { id: "profile", label: "Profile" },
   { id: "dailydose", label: "DailyDose" },
   { id: "funbrain", label: "FunBrain" },
   { id: "pledges", label: "AI Pledges" },
   { id: "puzzles", label: "Puzzles" },
+  { id: "inspiration", label: "Inspiration" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<TabId>("dailydose");
+  const [tab, setTab] = useState<TabId>("profile");
 
   return (
     <div>
@@ -37,6 +40,7 @@ export default function AdminPage() {
         ))}
       </nav>
 
+      {tab === "profile" && <AdminProfilePanel />}
       {tab === "dailydose" && (
         <QuestionsAdminPanel
           domain="dailydose"
@@ -53,6 +57,7 @@ export default function AdminPage() {
       )}
       {tab === "pledges" && <SchedulePreviewPanel mode="pledges" />}
       {tab === "puzzles" && <SchedulePreviewPanel mode="puzzles" />}
+      {tab === "inspiration" && <SchedulePreviewPanel mode="inspiration" />}
     </div>
   );
 }

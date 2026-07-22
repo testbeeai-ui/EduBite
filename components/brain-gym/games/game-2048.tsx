@@ -10,6 +10,14 @@ import { cn } from "@/lib/utils";
 type Board = number[][];
 type Dir = "L" | "R" | "U" | "D";
 
+export function targetForDifficulty(
+  difficulty: GameComponentProps["difficulty"],
+): number {
+  if (difficulty === "easy") return 256;
+  if (difficulty === "medium") return 512;
+  return 2048;
+}
+
 function empty(): Board {
   return Array.from({ length: 4 }, () => [0, 0, 0, 0]);
 }
@@ -108,7 +116,7 @@ export function Game2048({
   paused,
   restartKey,
 }: GameComponentProps) {
-  const target = 2048;
+  const target = targetForDifficulty(difficulty);
 
   const [board, setBoard] = useState<Board>(() => spawn(spawn(empty())));
   const [score, setScore] = useState(0);

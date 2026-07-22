@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { allowProgressWrite } from "@/lib/api/rate-limit";
 import { getRequestUser } from "@/lib/auth/server";
 import {
   assertPayloadSize,
@@ -52,7 +53,6 @@ function parseMutation(raw: unknown): BrainGymMutation | null {
     typeof raw.result.won !== "boolean" ||
     typeof raw.result.score !== "number" ||
     !Number.isFinite(raw.result.score) ||
-    raw.result.score < 0 ||
     raw.result.score > 1_000_000 ||
     typeof raw.result.timeMs !== "number" ||
     !Number.isFinite(raw.result.timeMs) ||
@@ -68,7 +68,7 @@ function parseMutation(raw: unknown): BrainGymMutation | null {
     sessionId: raw.sessionId,
     gameId: raw.gameId as GameId,
     result: {
-      score: raw.result.score,
+      score: Math.max(0, raw.result.score),
       won: raw.result.won,
       timeMs: raw.result.timeMs,
       difficulty: raw.result.difficulty as Difficulty,
@@ -101,6 +101,17 @@ export async function PUT(request: Request) {
     const user = await getRequestUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const limited = allowProgressWrite(user.id);
+    if (!limited.ok) {
+      return NextResponse.json(
+        { error: "Too many saves", retryAfterSec: limited.retryAfterSec },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limited.retryAfterSec) },
+        },
+      );
     }
 
     let body: unknown;

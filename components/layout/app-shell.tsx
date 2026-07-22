@@ -12,6 +12,7 @@ import { FunBrainView } from "@/components/views/funbrain-view";
 import { HabitsView } from "@/components/views/habits-view";
 import { HomeView } from "@/components/views/home-view";
 import { InspirationView } from "@/components/views/inspiration-view";
+import { MonthlyChallengeView } from "@/components/views/monthly-challenge-view";
 import { PuzzlesView } from "@/components/views/puzzles-view";
 import { WASquadView } from "@/components/views/wasquad-view";
 import { PageSkeleton } from "@/components/ui/skeleton";
@@ -38,6 +39,7 @@ const VIEW_MAP: Record<AppView, React.ComponentType> = {
   achievements: AchievementsView,
   inspiration: InspirationView,
   ai: AIView,
+  challenge: MonthlyChallengeView,
 };
 
 const PUBLIC_VIEWS = new Set<AppView>(["home"]);
@@ -62,7 +64,7 @@ export function AppShell() {
   return (
     <>
       <AppHeader />
-      <main className="max-w-[1180px] w-full mx-auto px-4 sm:px-7 py-5 sm:py-9 pb-16 sm:pb-[90px]">
+      <main className="max-w-[1180px] w-full mx-auto px-4 sm:px-7 py-5 sm:py-8 pb-8 sm:pb-10">
         {!hydrated || authLoading ? (
           <PageSkeleton />
         ) : (

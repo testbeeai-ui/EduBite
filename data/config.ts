@@ -23,7 +23,7 @@ export const FEATURES = {
     label: "Brain Gym",
     tagline: "GO DEEPER",
     eyebrow: "Function 03",
-    streakLabel: "Brain Gym 30 min",
+    streakLabel: "Brain Gym playtime",
     subtitle:
       'Optional "why it works" deep dives, unlocked by streaks and levels — real concept mastery, no cramming.',
   },
@@ -32,6 +32,7 @@ export const FEATURES = {
     label: "Puzzles",
     tagline: "ONE A DAY",
     eyebrow: "Function 03B",
+    streakLabel: "Puzzles",
     subtitle:
       "Class XI & XII challenges. Solve today — answers unlock tomorrow.",
   },
@@ -40,12 +41,14 @@ export const FEATURES = {
     label: "DailyDose",
     tagline: "3 MIN · +45 RDM",
     eyebrow: "Function 01",
+    streakLabel: "Daily Dose",
   },
   funbrain: {
     id: "funbrain" as const,
     label: "FunBrain",
     tagline: "60 SEC SPRINT",
     eyebrow: "Function 02",
+    streakLabel: "Fun Brain",
   },
   wasquad: {
     id: "wasquad" as const,
@@ -74,5 +77,5 @@ export const NAV_ITEMS = [
   { id: "habits", label: "Habits", shortLabel: "Habits", emoji: "🌱", accent: "from-emerald/30 to-teal/10" },
   { id: "achievements", label: "Achievements", shortLabel: "Badges", emoji: "🏆", accent: "from-amber/30 to-orange/10" },
   { id: "inspiration", label: "Inspiration", shortLabel: "Spark", emoji: "🌟", accent: "from-yellow/25 to-amber/10" },
-  { id: "ai", label: "AI", shortLabel: "AI", emoji: "🤖", accent: "from-purple/35 to-pink/15" },
+  { id: "ai", label: "AI", shortLabel: "AI", emoji: "🤖", accent: "from-purple/30 to-indigo/10" },
 ] as const;

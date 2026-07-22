@@ -14,6 +14,13 @@ import { todayKey, addDaysToKey } from "@/lib/utils";
 
 export const BRAIN_GYM_KEY = "edubite.braingym.v1";
 export const MASTERY_WIN_LIMIT = 5;
+const BRAIN_GYM_PENDING_KEY = "edubite.braingym.pending.v1";
+
+type SessionMutation = Extract<BrainGymMutation, { type: "session" }>;
+type PendingSession = {
+  progress: BrainGymProgress;
+  mutation: SessionMutation;
+};
 
 export function emptyDifficultyWins(): DifficultyWins {
   return { easy: 0, medium: 0, hard: 0 };
@@ -50,6 +57,64 @@ export function remainingMasteryWins(
 
 function scopedKey(userId: string): string {
   return `${BRAIN_GYM_KEY}:user:${userId}`;
+}
+
+function pendingKey(userId: string): string {
+  return `${BRAIN_GYM_PENDING_KEY}:user:${userId}`;
+}
+
+function readPendingSessions(userId: string): PendingSession[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(pendingKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as PendingSession[];
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (entry) =>
+            entry?.mutation?.type === "session" &&
+            typeof entry.mutation.sessionId === "string",
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function queueBrainGymSession(
+  userId: string,
+  progress: BrainGymProgress,
+  mutation: SessionMutation,
+): void {
+  if (typeof window === "undefined") return;
+  const pending = readPendingSessions(userId).filter(
+    (entry) => entry.mutation.sessionId !== mutation.sessionId,
+  );
+  pending.push({ progress, mutation });
+  localStorage.setItem(pendingKey(userId), JSON.stringify(pending.slice(-30)));
+}
+
+function removePendingSession(userId: string, sessionId: string): void {
+  if (typeof window === "undefined") return;
+  const remaining = readPendingSessions(userId).filter(
+    (entry) => entry.mutation.sessionId !== sessionId,
+  );
+  if (remaining.length === 0) {
+    localStorage.removeItem(pendingKey(userId));
+  } else {
+    localStorage.setItem(pendingKey(userId), JSON.stringify(remaining));
+  }
+}
+
+async function flushPendingSessions(userId: string): Promise<void> {
+  for (const pending of readPendingSessions(userId)) {
+    const result = await saveBrainGym(
+      userId,
+      pending.progress,
+      pending.mutation,
+    );
+    if (!result.ok) return;
+  }
 }
 
 function emptyStats(): GameStats {
@@ -145,6 +210,7 @@ export async function loadBrainGym(
   if (!userId) return createDefaultProgress();
 
   try {
+    await flushPendingSessions(userId);
     const res = await fetch("/api/progress/brain-gym", {
       method: "GET",
       credentials: "include",
@@ -216,6 +282,9 @@ export async function saveBrainGym(
       progress?: BrainGymProgress;
       gameState?: { rdm?: number } | null;
     };
+    if (mutation.type === "session") {
+      removePendingSession(userId, mutation.sessionId);
+    }
     return {
       ok: true,
       awarded: typeof data.awarded === "number" ? data.awarded : 0,
@@ -263,22 +332,28 @@ export function applySessionResult(
     return { progress, newBadges: [], rdmGain: 0 };
   }
 
+  const score = Number.isFinite(result.score)
+    ? Math.max(0, Math.round(result.score))
+    : 0;
+  const timeMs = Number.isFinite(result.timeMs)
+    ? Math.max(0, Math.round(result.timeMs))
+    : 0;
   const today = todayKey();
   const prev = progress.games[gameId] ?? emptyStats();
   const entry = {
-    score: result.score,
-    bestTimeMs: result.timeMs,
+    score,
+    bestTimeMs: timeMs,
     difficulty: result.difficulty,
     at: new Date().toISOString(),
     won: result.won,
   };
 
-  const bestScore = Math.max(prev.bestScore, result.score);
+  const bestScore = Math.max(prev.bestScore, score);
   const bestTimeMs =
-    result.won && result.timeMs > 0
+    result.won && timeMs > 0
       ? prev.bestTimeMs
-        ? Math.min(prev.bestTimeMs, result.timeMs)
-        : result.timeMs
+        ? Math.min(prev.bestTimeMs, timeMs)
+        : timeMs
       : prev.bestTimeMs;
 
   const playDates = [...new Set([...progress.playDates, today])].slice(-60);
@@ -289,8 +364,8 @@ export function applySessionResult(
   if (isDaily && dailyChallenge?.date === today) {
     dailyChallenge = {
       ...dailyChallenge,
-      completed: dailyChallenge.completed || result.won || result.score > 0,
-      score: Math.max(dailyChallenge.score, result.score),
+      completed: dailyChallenge.completed || result.won || score > 0,
+      score: Math.max(dailyChallenge.score, score),
     };
   }
 
@@ -326,7 +401,7 @@ export function applySessionResult(
   };
 
   // RDM: base + win bonus + daily bonus
-  let rdmGain = Math.max(5, Math.floor(result.score / 20));
+  let rdmGain = Math.max(5, Math.floor(score / 20));
   if (result.won) rdmGain += 15;
   if (isDaily && result.won) rdmGain += 25;
   rdmGain = Math.min(120, rdmGain);

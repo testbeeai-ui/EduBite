@@ -348,14 +348,36 @@ function SpeedMath3D({
 }
 
 // Generate math equations
-function generateEquation(difficulty: string) {
-  const max = difficulty === "easy" ? 12 : difficulty === "medium" ? 20 : 50;
-  const a = 1 + Math.floor(Math.random() * max);
-  const b = 1 + Math.floor(Math.random() * max);
-  
-  const ops = difficulty === "hard" ? ["+", "-", "*"] : ["+", "-"];
+function generateEquation(difficulty: GameComponentProps["difficulty"]) {
+  const ops =
+    difficulty === "easy"
+      ? ["+", "-"]
+      : difficulty === "medium"
+        ? ["+", "-", "*"]
+        : ["+", "-", "*"];
   const op = ops[Math.floor(Math.random() * ops.length)]!;
-  
+  const multiplication = op === "*";
+  const a =
+    difficulty === "easy"
+      ? 1 + Math.floor(Math.random() * 30)
+      : difficulty === "medium"
+        ? multiplication
+          ? 2 + Math.floor(Math.random() * 11)
+          : 1 + Math.floor(Math.random() * 100)
+        : multiplication
+          ? 10 + Math.floor(Math.random() * 90)
+          : 10 + Math.floor(Math.random() * 90);
+  const b =
+    difficulty === "easy"
+      ? 1 + Math.floor(Math.random() * 30)
+      : difficulty === "medium"
+        ? multiplication
+          ? 2 + Math.floor(Math.random() * 11)
+          : 1 + Math.floor(Math.random() * 100)
+        : multiplication
+          ? 2 + Math.floor(Math.random() * 8)
+          : 10 + Math.floor(Math.random() * 90);
+
   const ans = op === "+" ? a + b : op === "-" ? a - b : a * b;
   if (op === "-" && ans < 0) return generateEquation(difficulty);
   
@@ -374,8 +396,8 @@ export function SpeedMathGame({
   paused,
   restartKey,
 }: GameComponentProps) {
-  const timeLimit = difficulty === "easy" ? 60000 : difficulty === "medium" ? 45000 : 30000;
-  const numQuestions = difficulty === "easy" ? 10 : difficulty === "medium" ? 15 : 20;
+  const timeLimit = 60_000;
+  const numQuestions = difficulty === "easy" ? 12 : difficulty === "medium" ? 15 : 18;
 
   const [equations] = useState(() => {
     return range(numQuestions).map(() => generateEquation(difficulty));
@@ -389,6 +411,7 @@ export function SpeedMathGame({
   const [timeLeft, setTimeLeft] = useState(timeLimit);
   const [completed, setCompleted] = useState(false);
   const completedRef = useRef(false);
+  const answerLockedRef = useRef(false);
   
   const lives = useMemo(() => {
     const gameMeta = GAMES.find(g => g.id === "speed-math");
@@ -419,6 +442,7 @@ export function SpeedMathGame({
     setTimeLeft(timeLimit);
     setCompleted(false);
     completedRef.current = false;
+    answerLockedRef.current = false;
     setInternalLives(lives);
     setHintActive(false);
     setHintsLeft(3);
@@ -435,22 +459,47 @@ export function SpeedMathGame({
     options.add(correctAnswer);
     
     // Add wrong answers
+    const deltas = shuffle([
+      -10,
+      -5,
+      -2,
+      -1,
+      1,
+      2,
+      5,
+      10,
+      Math.max(3, Math.round(Math.abs(correctAnswer) * 0.1)),
+    ]);
+    for (const delta of deltas) {
+      if (options.size >= 4) break;
+      const wrong = correctAnswer + delta;
+      if (wrong >= 0) options.add(wrong);
+    }
     while (options.size < 4) {
-      const wrong = Math.floor(Math.random() * 100) + 1;
-      options.add(wrong);
+      options.add(correctAnswer + options.size + 1);
     }
     
     return shuffle(Array.from(options));
   }, [currentIndex, correctAnswer, currentEquation]);
 
   const handleSelect = useCallback((answer: number) => {
-    if (paused || completed || showResult) return;
+    if (
+      paused ||
+      completed ||
+      showResult ||
+      completedRef.current ||
+      answerLockedRef.current
+    ) {
+      return;
+    }
+    answerLockedRef.current = true;
     
     sfx.tap(soundEnabled);
     setSelectedAnswer(answer);
     setHintActive(false);
     
     schedule(() => {
+      if (completedRef.current) return;
       setShowResult(true);
       const answeredCorrectly = answer === correctAnswer;
       const nextLives = answeredCorrectly
@@ -485,6 +534,7 @@ export function SpeedMathGame({
           setCurrentIndex(prev => prev + 1);
           setSelectedAnswer(null);
           setShowResult(false);
+          answerLockedRef.current = false;
         } else {
           // Game completed
           const timeMs = Math.max(0, timeLimit - timeLeft);
@@ -507,6 +557,7 @@ export function SpeedMathGame({
     const timer = setInterval(() => {
       setTimeLeft(prev => {
         if (completedRef.current) return prev;
+        if (answerLockedRef.current) return prev;
         if (prev <= 100 && !completedRef.current) {
           clearInterval(timer);
           completedRef.current = true;

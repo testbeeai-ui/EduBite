@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { sfx } from "@/lib/brain-gym/utils/sound";
 import { difficultyMultiplier } from "@/lib/brain-gym/storage";
+import { shuffle } from "@/lib/brain-gym/utils/shuffle";
 import { GameBoard, StatusLine } from "./_shared";
 import { usePausableScheduler } from "./_pausable-scheduler";
 
@@ -21,7 +22,9 @@ export function LetterMemoryGame({
   const [seq, setSeq] = useState<string[]>([]);
   const [display, setDisplay] = useState("");
   const [phase, setPhase] = useState<"flash" | "input">("flash");
+  const [flashPosition, setFlashPosition] = useState(0);
   const [answer, setAnswer] = useState("");
+  const [replaysLeft, setReplaysLeft] = useState(1);
   const [lives, setLives] = useState(3);
   const [score, setScore] = useState(0);
   const [round, setRound] = useState(1);
@@ -29,28 +32,30 @@ export function LetterMemoryGame({
   const completedRef = useRef(false);
   const { schedule } = usePausableScheduler(paused);
 
-  const make = (n: number) =>
-    Array.from({ length: n }, () => LETTERS[Math.floor(Math.random() * LETTERS.length)]!);
+  const make = (n: number) => shuffle([...LETTERS]).slice(0, n);
 
   const flash = (s: string[]) => {
     setPhase("flash");
     setAnswer("");
     let i = 0;
-    setDisplay(s[0]!);
-    const nextLetter = () => {
+    const showNextLetter = () => {
+      setFlashPosition(i);
+      setDisplay(s[i]!);
+      sfx.tick(soundEnabled);
       schedule(() => {
-        i++;
-        if (i >= s.length) {
-          setDisplay("?");
-          setPhase("input");
-          return;
-        }
-        setDisplay(s[i]!);
-        sfx.tick(soundEnabled);
-        nextLetter();
-      }, difficulty === "hard" ? 450 : 700);
+        setDisplay("");
+        schedule(() => {
+          i++;
+          if (i >= s.length) {
+            setDisplay("?");
+            setPhase("input");
+            return;
+          }
+          showNextLetter();
+        }, 300);
+      }, difficulty === "easy" ? 1_000 : difficulty === "medium" ? 850 : 650);
     };
-    nextLetter();
+    showNextLetter();
   };
 
   useEffect(() => {
@@ -74,6 +79,7 @@ export function LetterMemoryGame({
       }
       const s = make(len + (round >= 3 ? 1 : 0));
       setSeq(s);
+      setReplaysLeft(1);
       setRound((r) => r + 1);
       schedule(() => flash(s), 300);
     } else {
@@ -90,9 +96,14 @@ export function LetterMemoryGame({
 
   return (
     <GameBoard>
-      <StatusLine>Round {round}/5 · Remember the letters</StatusLine>
+      <StatusLine>
+        Round {round}/5 ·{" "}
+        {phase === "flash"
+          ? `Letter ${flashPosition + 1} of ${seq.length}`
+          : `Enter all ${seq.length} letters`}
+      </StatusLine>
       <div className="text-center text-5xl sm:text-6xl font-mono font-bold tracking-[0.35em] py-10 text-blue">
-        {display}
+        {display || (phase === "flash" ? "•" : "?")}
       </div>
       {phase === "input" && (
         <div className="space-y-3 max-w-sm mx-auto">
@@ -110,6 +121,18 @@ export function LetterMemoryGame({
             className="w-full py-3 rounded-full bg-gradient-to-r from-blue to-purple text-white font-display font-bold"
           >
             Submit
+          </button>
+          <button
+            type="button"
+            disabled={replaysLeft <= 0}
+            onClick={() => {
+              if (replaysLeft <= 0) return;
+              setReplaysLeft(0);
+              flash(seq);
+            }}
+            className="w-full py-2.5 rounded-full border border-[var(--line)] bg-[var(--surface-2)] text-sm font-display font-semibold disabled:opacity-40"
+          >
+            {replaysLeft > 0 ? "Replay letters once" : "Replay used"}
           </button>
         </div>
       )}

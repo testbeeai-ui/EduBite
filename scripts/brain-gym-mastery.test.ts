@@ -3,6 +3,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { GAMES } from "@/data/brain-gym/registry";
 import { GAME_COMPONENTS } from "@/components/brain-gym/games";
+import { targetForDifficulty } from "@/components/brain-gym/games/game-2048";
+import { isValidCompletedSudoku } from "@/components/brain-gym/games/sudoku";
+import {
+  isReactionRunWon,
+  reactionScoreForMs,
+} from "@/components/brain-gym/games/reaction-time";
 import {
   applySessionResult,
   createDefaultProgress,
@@ -69,6 +75,35 @@ assert.equal(isDifficultyLocked(progress, gameId, "easy"), true);
 assert.equal(isDifficultyLocked(progress, gameId, "medium"), false);
 assert.equal(isDifficultyLocked(progress, gameId, "hard"), false);
 
+assert.ok(reactionScoreForMs(200, "easy") >= 90);
+assert.ok(reactionScoreForMs(300, "easy") < reactionScoreForMs(200, "easy"));
+assert.ok(reactionScoreForMs(1_000, "easy") >= 0);
+assert.ok(
+  reactionScoreForMs(250, "hard") >= reactionScoreForMs(250, "easy"),
+);
+assert.equal(isReactionRunWon(0, 90), true);
+assert.equal(isReactionRunWon(2, 60), true);
+assert.equal(isReactionRunWon(3, 100), false);
+assert.equal(isReactionRunWon(0, 59), false);
+assert.equal(
+  isValidCompletedSudoku([
+    1, 2, 3, 4,
+    3, 4, 1, 2,
+    2, 1, 4, 3,
+    4, 3, 2, 1,
+  ]),
+  true,
+);
+assert.equal(
+  isValidCompletedSudoku([
+    1, 1, 3, 4,
+    3, 4, 1, 2,
+    2, 1, 4, 3,
+    4, 3, 2, 1,
+  ]),
+  false,
+);
+
 const playsAtLock = progress.games[gameId]?.plays;
 progress = finish(progress, "easy");
 assert.equal(progress.games[gameId]?.plays, playsAtLock);
@@ -96,6 +131,96 @@ assert.deepEqual(
   Object.keys(GAME_COMPONENTS).sort(),
 );
 
+for (const game of GAMES) {
+  let gameProgress = createDefaultProgress();
+  for (let count = 0; count < MASTERY_WIN_LIMIT; count++) {
+    gameProgress = applySessionResult(
+      gameProgress,
+      game.id,
+      {
+        difficulty: "easy",
+        won: true,
+        score: 100,
+        timeMs: 1_000,
+      },
+      false,
+    ).progress;
+  }
+  assert.equal(
+    isDifficultyLocked(gameProgress, game.id, "easy"),
+    true,
+    `${game.id} Easy should lock after five wins`,
+  );
+  assert.equal(
+    isDifficultyLocked(gameProgress, game.id, "medium"),
+    false,
+    `${game.id} Medium should remain available`,
+  );
+
+  const playsAtEasyLock = gameProgress.games[game.id]?.plays;
+  gameProgress = applySessionResult(
+    gameProgress,
+    game.id,
+    { difficulty: "easy", won: true, score: 100, timeMs: 1_000 },
+    false,
+  ).progress;
+  assert.equal(
+    gameProgress.games[game.id]?.plays,
+    playsAtEasyLock,
+    `${game.id} must reject plays on mastered Easy`,
+  );
+
+  for (let count = 0; count < MASTERY_WIN_LIMIT; count++) {
+    gameProgress = applySessionResult(
+      gameProgress,
+      game.id,
+      {
+        difficulty: "medium",
+        won: true,
+        score: 140,
+        timeMs: 1_000,
+      },
+      false,
+    ).progress;
+  }
+  assert.equal(
+    isDifficultyLocked(gameProgress, game.id, "medium"),
+    true,
+    `${game.id} Medium should lock after five wins`,
+  );
+
+  for (let count = 0; count < 7; count++) {
+    gameProgress = applySessionResult(
+      gameProgress,
+      game.id,
+      { difficulty: "hard", won: true, score: 180, timeMs: 1_000 },
+      false,
+    ).progress;
+  }
+  assert.equal(
+    difficultyWinsFor(gameProgress, game.id, "hard"),
+    7,
+    `${game.id} Hard wins should remain unlimited`,
+  );
+  assert.equal(isDifficultyLocked(gameProgress, game.id, "hard"), false);
+}
+
+const negativeScoreResult = applySessionResult(
+  createDefaultProgress(),
+  gameId,
+  { difficulty: "easy", won: false, score: -250, timeMs: -1 },
+  false,
+);
+assert.equal(negativeScoreResult.progress.games[gameId]?.bestScore, 0);
+assert.equal(
+  negativeScoreResult.progress.games[gameId]?.recentScores[0]?.score,
+  0,
+);
+assert.equal(
+  negativeScoreResult.progress.games[gameId]?.recentScores[0]?.bestTimeMs,
+  0,
+);
+
 const root = process.cwd();
 const migration = readFileSync(
   join(
@@ -110,6 +235,19 @@ assert.match(migration, /pg_advisory_xact_lock/);
 assert.match(migration, /brain-gym-session:/);
 assert.match(migration, /difficulty mastered/);
 assert.match(migration, /wins_before >= 5/);
+const authoritativeMergeMigration = readFileSync(
+  join(
+    root,
+    "supabase",
+    "migrations",
+    "20260719181526_brain_gym_authoritative_merge.sql",
+  ),
+  "utf8",
+);
+assert.match(
+  authoritativeMergeMigration,
+  /p_progress - 'games' - 'totalPlays' - 'totalWins'/,
+);
 
 const sequenceMemory = readFileSync(
   join(
@@ -122,6 +260,29 @@ const sequenceMemory = readFileSync(
   "utf8",
 );
 assert.doesNotMatch(sequenceMemory, /won:\s*score\s*>=/);
+
+const patternMemory = readFileSync(
+  join(root, "components", "brain-gym", "games", "pattern-memory.tsx"),
+  "utf8",
+);
+assert.match(patternMemory, /show \|\| completedRef\.current/);
+assert.match(patternMemory, /gen\(round \+ 1\)/);
+
+const imageMemory = readFileSync(
+  join(root, "components", "brain-gym", "games", "image-memory.tsx"),
+  "utf8",
+);
+assert.match(imageMemory, /const \[changedGrid, setChangedGrid\]/);
+assert.doesNotMatch(imageMemory, /const quizGrid =/);
+
+const letterMemory = readFileSync(
+  join(root, "components", "brain-gym", "games", "letter-memory.tsx"),
+  "utf8",
+);
+assert.match(letterMemory, /shuffle\(\[\.\.\.LETTERS\]\)\.slice\(0, n\)/);
+assert.match(letterMemory, /setDisplay\(""\)/);
+assert.match(letterMemory, /Letter \$\{flashPosition \+ 1\} of \$\{seq\.length\}/);
+assert.match(letterMemory, /Replay letters once/);
 
 const activeGameFiles = [
   "sequence-memory",
@@ -185,7 +346,10 @@ const game2048 = readFileSync(
   join(root, "components", "brain-gym", "games", "game-2048.tsx"),
   "utf8",
 );
-assert.match(game2048, /const target = 2048/);
+assert.equal(targetForDifficulty("easy"), 256);
+assert.equal(targetForDifficulty("medium"), 512);
+assert.equal(targetForDifficulty("hard"), 2048);
+assert.match(game2048, /targetForDifficulty\(difficulty\)/);
 
 const matchShadow = readFileSync(
   join(root, "components", "brain-gym", "games", "match-shadow.tsx"),
@@ -197,7 +361,7 @@ const reactionTime = readFileSync(
   join(root, "components", "brain-gym", "games", "reaction-time.tsx"),
   "utf8",
 );
-assert.match(reactionTime, /won:\s*true/);
+assert.match(reactionTime, /won:\s*isReactionRunWon/);
 assert.doesNotMatch(reactionTime, /won:\s*avg\s*</);
 
 const speedMath = readFileSync(
@@ -206,5 +370,16 @@ const speedMath = readFileSync(
 );
 assert.match(speedMath, /if \(nextLives <= 0\)/);
 assert.match(speedMath, /usePausableScheduler/);
+assert.match(speedMath, /answerLockedRef\.current = true/);
+
+const gameShell = readFileSync(
+  join(root, "components", "brain-gym", "shell", "game-shell.tsx"),
+  "utf8",
+);
+assert.doesNotMatch(gameShell, /pausedRef/);
+assert.match(
+  gameShell,
+  /activeRunKeyRef\.current = nextRunKey;\s*setRestartKey\(nextRunKey\)/,
+);
 
 console.log("Brain Gym mastery regression tests passed.");

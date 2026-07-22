@@ -1,4 +1,5 @@
 import { clsx, type ClassValue } from "clsx";
+import { getDateOverride } from "./clock/override-store";
 
 export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
@@ -20,12 +21,18 @@ export function formatMsAsClock(ms: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-export function todayKey(): string {
+/** Real device calendar day (ignores admin date override). */
+export function realTodayKey(): string {
   const d = new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/** Effective “today” — respects admin AppClock override when set. */
+export function todayKey(): string {
+  return getDateOverride() ?? realTodayKey();
 }
 
 export function parseDateKey(key: string): Date {

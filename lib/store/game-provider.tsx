@@ -25,9 +25,18 @@ import {
   RDM_PER_DOSE_CORRECT,
   todayCriteria,
 } from "@/lib/gamification";
+import {
+  isInEntryWindow,
+  getChallengeMonthMeta,
+  MONTHLY_CHALLENGE_TARGET_RDM,
+  recordDoseDayInState,
+} from "@/lib/challenge/monthly";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { storePendingView, readPendingView, clearPendingView } from "@/lib/auth/pending-action";
+import { useAppClock } from "@/lib/clock/app-clock";
+import { toPersistableGameState } from "@/lib/persistence/persistable-game-state";
 import { createSaveQueue } from "@/lib/persistence/save-queue";
+import { loadPuzzleProgress } from "@/lib/puzzles/storage";
 import { storageAdapter } from "@/lib/storage";
 import type {
   AppView,
@@ -62,6 +71,10 @@ type GameAction =
   | { type: "UNLOCK_GYAN_FROM_DOSE" }
   | { type: "AWARD_RDM"; payload: number }
   | { type: "SYNC_RDM"; payload: number }
+  | { type: "SET_RDM"; payload: number }
+  | { type: "SET_PUZZLE_COMPLETED"; payload?: boolean }
+  | { type: "ENROLL_MONTHLY_CHALLENGE"; payload: string }
+  | { type: "MARK_CHALLENGE_PUZZLE_SUBMITTED"; payload: string }
   | { type: "ROLL_DAY" };
 
 function withDerived(state: GameState): GameState {
@@ -73,15 +86,18 @@ function rollDayIfNeeded(state: GameState): GameState {
   const today = todayKey();
   if (state.lastActiveDate === today) return state;
 
-  const yesterdayCriteria = todayCriteria(state);
-  const history = [...state.history, yesterdayCriteria].slice(-27);
+  // Snapshot yesterday's dose score into the challenge log before reset.
+  const withDoseLog = recordDoseDayInState(state, state.lastActiveDate);
+  const yesterdayCriteria = todayCriteria(withDoseLog);
+  const history = [...withDoseLog.history, yesterdayCriteria].slice(-27);
 
   return withDerived({
-    ...state,
+    ...withDoseLog,
     history,
     lastActiveDate: today,
     doseRdmCredited: 0,
     funbrainRdmCredited: 0,
+    puzzleCompleted: false,
     pledgeAM: false,
     pledgePM: false,
     gyanTimeMs: 0,
@@ -109,6 +125,7 @@ function rollDayIfNeeded(state: GameState): GameState {
       combo: 0,
       highScore: state.funbrain.highScore,
       currentQuestionIndex: 0,
+      answers: [],
       finished: false,
       completed: false,
     },
@@ -131,17 +148,26 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return withDerived({
         ...hydrated,
         habits: syncedHabits,
+        // Payload may carry today's puzzle sync from puzzle progress (set before roll).
+        puzzleCompleted:
+          action.payload.puzzleCompleted || hydrated.puzzleCompleted,
       });
     }
     case "SET_SIGNED_IN":
       return { ...state, signedIn: action.payload };
-    case "TOGGLE_HABIT":
+    case "TOGGLE_HABIT": {
+      const habit = state.habits.find((h) => h.id === action.payload);
+      if (!habit) return state;
+      const nextDone = !habit.done;
+      const rdmDelta = nextDone ? habit.rdm : -habit.rdm;
       return withDerived({
         ...state,
+        rdm: Math.max(0, state.rdm + rdmDelta),
         habits: state.habits.map((h) =>
-          h.id === action.payload ? { ...h, done: !h.done } : h,
+          h.id === action.payload ? { ...h, done: nextDone } : h,
         ),
       });
+    }
     case "ANSWER_DOSE": {
       if (state.dose.locked || state.dose.completed) return state;
       const isCorrect = action.payload.selected === action.payload.correct;
@@ -180,7 +206,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const nextIndex = state.dose.index + 1;
       const is11 = state.dose.currentClass === "11";
       if (nextIndex >= questionCount) {
-        return withDerived({
+        const completedState = withDerived({
           ...state,
           dose: {
             ...state.dose,
@@ -191,6 +217,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             completed12: !is11 ? true : state.dose.completed12,
           },
         });
+        return recordDoseDayInState(
+          completedState,
+          todayKey(),
+          questionCount,
+        );
       }
       return {
         ...state,
@@ -281,6 +312,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           combo: 0,
           highScore: state.funbrain.highScore,
           currentQuestionIndex: 0,
+          answers: [],
           finished: false,
           completed: false,
         },
@@ -324,7 +356,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         action.payload.poolLength && action.payload.poolLength > 0
           ? action.payload.poolLength
           : FUNBRAIN_QUESTIONS_PER_DAY;
-      const nextQ = state.funbrain.currentQuestionIndex + 1;
+      const qIndex = state.funbrain.currentQuestionIndex;
+      const answers = [...state.funbrain.answers];
+      answers[qIndex] = action.payload.selected;
+      const nextQ = qIndex + 1;
 
       // One pass through today's 6 only — no looping the full bank.
       if (nextQ >= poolLength) {
@@ -338,6 +373,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             ...state.funbrain,
             score,
             combo,
+            answers,
             currentQuestionIndex: poolLength,
             running: false,
             finished: true,
@@ -353,6 +389,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state.funbrain,
           score,
           combo,
+          answers,
           currentQuestionIndex: nextQ,
         },
       };
@@ -389,6 +426,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           combo: 0,
           highScore: state.funbrain.highScore,
           currentQuestionIndex: 0,
+          answers: [],
           finished: false,
           completed: false,
         },
@@ -440,6 +478,39 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         rdm: Math.max(state.rdm, Math.round(action.payload)),
       });
+    case "SET_RDM":
+      if (!Number.isFinite(action.payload) || action.payload < 0) return state;
+      return withDerived({
+        ...state,
+        rdm: Math.round(action.payload),
+      });
+    case "SET_PUZZLE_COMPLETED": {
+      const next = action.payload !== false;
+      if (state.puzzleCompleted === next) return state;
+      return withDerived({ ...state, puzzleCompleted: next });
+    }
+    case "ENROLL_MONTHLY_CHALLENGE": {
+      const monthKey = action.payload;
+      if (!/^\d{4}-\d{2}$/.test(monthKey)) return state;
+      if (state.challengeEnrolledMonthKey === monthKey) return state;
+      if (state.rdm < MONTHLY_CHALLENGE_TARGET_RDM) return state;
+      const today = todayKey();
+      const meta = getChallengeMonthMeta(today);
+      if (monthKey !== meta.monthKey) return state;
+      if (!isInEntryWindow(today)) return state;
+      return withDerived({
+        ...state,
+        challengeEnrolledMonthKey: monthKey,
+      });
+    }
+    case "MARK_CHALLENGE_PUZZLE_SUBMITTED": {
+      const monthKey = action.payload;
+      if (!/^\d{4}-\d{2}$/.test(monthKey)) return state;
+      return withDerived({
+        ...state,
+        challengePuzzleSubmittedMonthKey: monthKey,
+      });
+    }
     case "ROLL_DAY":
       return withDerived(rollDayIfNeeded(state));
     default: {
@@ -466,6 +537,12 @@ interface GameContextValue {
   awardRDM: (amount: number) => void;
   /** Raise local RDM to at least the server value after an atomic reward write. */
   syncRdm: (rdm: number) => void;
+  /** Admin QA: set absolute RDM balance. */
+  setRdm: (rdm: number) => void;
+  /** Enroll in this month's Monthly Challenge (days 1–5). */
+  enrollMonthlyChallenge: (monthKey: string) => void;
+  /** Mark final puzzle submitted for a month key. */
+  markChallengePuzzleSubmitted: (monthKey: string) => void;
   toggleHabit: (id: string) => void;
   answerDose: (selected: number, correct: number) => void;
   nextDose: (questionCount?: number) => void;
@@ -486,12 +563,15 @@ interface GameContextValue {
   resetPledge: (type: PledgeType) => void;
   selectDoseClass: (cls: "11" | "12") => void;
   closeReel: () => void;
+  /** Mark today's puzzle as done for the main learning streak. */
+  markPuzzleCompleted: () => void;
 }
 
 const GameContext = createContext<GameContextValue | null>(null);
 
 export function GameProvider({ children }: { children: ReactNode }) {
   const { user, loading: authLoading, requireAuth } = useAuth();
+  const { todayKey: clockToday } = useAppClock();
   const [state, dispatch] = useReducer(gameReducer, createInitialState());
   const [hydrated, setHydrated] = useState(false);
   const [activeView, setActiveViewState] = useState<AppView>("home");
@@ -533,16 +613,25 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setHydrated(false);
 
     void (async () => {
-      const saved = await storageAdapter.load(user.id);
+      const [saved, puzzleProgress] = await Promise.all([
+        storageAdapter.load(user.id),
+        loadPuzzleProgress(user.id),
+      ]);
       if (cancelled) return;
 
+      const today = todayKey();
+      const puzzleDoneToday = Boolean(puzzleProgress.attempts[today]);
       const payload = saved ?? createInitialState();
       const hydratedPayload = {
         ...payload,
         signedIn: true,
-        joinedDate: payload.joinedDate ?? payload.lastActiveDate ?? todayKey(),
+        joinedDate: payload.joinedDate ?? payload.lastActiveDate ?? today,
+        puzzleCompleted:
+          payload.lastActiveDate === today
+            ? payload.puzzleCompleted || puzzleDoneToday
+            : puzzleDoneToday,
       };
-      saveQueueRef.current.setBaseline(hydratedPayload);
+      saveQueueRef.current.setBaseline(toPersistableGameState(hydratedPayload));
       dispatch({
         type: "HYDRATE",
         payload: hydratedPayload,
@@ -560,6 +649,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         "achievements",
         "inspiration",
         "ai",
+        "challenge",
       ];
       const pending = readPendingView() as AppView | null;
       if (pending && validViews.includes(pending)) {
@@ -580,8 +670,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated || authLoading || !user) return;
-    saveQueueRef.current.enqueue(state);
+    saveQueueRef.current.enqueue(toPersistableGameState(state));
   }, [state, hydrated, user, authLoading]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    dispatch({ type: "ROLL_DAY" });
+  }, [clockToday, hydrated]);
 
   useEffect(() => {
     if (!state.funbrain.running) return;
@@ -670,14 +765,25 @@ export function GameProvider({ children }: { children: ReactNode }) {
       requireAuth(() => dispatch({ type: "AWARD_RDM", payload: amount })),
     syncRdm: (rdm) =>
       requireAuth(() => dispatch({ type: "SYNC_RDM", payload: rdm })),
+    setRdm: (rdm) =>
+      requireAuth(() => dispatch({ type: "SET_RDM", payload: rdm })),
+    enrollMonthlyChallenge: (monthKey) =>
+      requireAuth(() =>
+        dispatch({ type: "ENROLL_MONTHLY_CHALLENGE", payload: monthKey }),
+      ),
+    markChallengePuzzleSubmitted: (monthKey) =>
+      requireAuth(() =>
+        dispatch({
+          type: "MARK_CHALLENGE_PUZZLE_SUBMITTED",
+          payload: monthKey,
+        }),
+      ),
     tickGyan,
     toggleGyan: (id) =>
       requireAuth(() => dispatch({ type: "TOGGLE_GYAN", payload: id })),
-    openPledgeModal: (type) =>
-      requireAuth(() => setModal({ pledge: type, reel: null })),
+    openPledgeModal: (type) => setModal({ pledge: type, reel: null }),
     closePledgeModal: () => setModal((m) => ({ ...m, pledge: null })),
-    openReel: (type) =>
-      requireAuth(() => setModal({ pledge: null, reel: type })),
+    openReel: (type) => setModal({ pledge: null, reel: type }),
     completePledge: (type) => {
       requireAuth(() => {
         dispatch({ type: "SIGN_PLEDGE", payload: type });
@@ -695,6 +801,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       });
     },
     closeReel: () => setModal((m) => ({ ...m, reel: null })),
+    markPuzzleCompleted: () => {
+      if (!user) return;
+      dispatch({ type: "SET_PUZZLE_COMPLETED", payload: true });
+    },
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

@@ -22,38 +22,46 @@ export async function GET() {
       resolveDailyDoseForClass("12", dateKey),
       getFunBrainForDate(dateKey),
     ]);
-    return NextResponse.json({
-      dateKey,
-      scheduleDate,
-      funbrainScheduleDate,
-      table: "edubite_content_questions",
-      dailydose11: {
-        source: dailydose11.source,
-        classLevel: "11",
-        questions: dailydose11.questions,
+    return NextResponse.json(
+      {
+        dateKey,
+        scheduleDate,
+        funbrainScheduleDate,
+        table: "edubite_content_questions",
+        dailydose11: {
+          source: dailydose11.source,
+          classLevel: "11",
+          questions: dailydose11.questions,
+        },
+        dailydose12: {
+          source: dailydose12.source,
+          classLevel: "12",
+          questions: dailydose12.questions,
+        },
+        /** @deprecated use dailydose11 / dailydose12 — kept for older clients */
+        dailydose: {
+          source:
+            dailydose11.source === "db" || dailydose12.source === "db"
+              ? "db"
+              : "static",
+          questions: [
+            ...dailydose11.questions,
+            ...dailydose12.questions,
+          ],
+        },
+        funbrain: {
+          source: funbrain.source,
+          scheduleDate: funbrain.scheduleDate ?? funbrainScheduleDate,
+          questions: funbrain.questions,
+        },
       },
-      dailydose12: {
-        source: dailydose12.source,
-        classLevel: "12",
-        questions: dailydose12.questions,
+      {
+        headers: {
+          "Cache-Control":
+            "public, s-maxage=120, stale-while-revalidate=1800, max-age=30",
+        },
       },
-      /** @deprecated use dailydose11 / dailydose12 — kept for older clients */
-      dailydose: {
-        source:
-          dailydose11.source === "db" || dailydose12.source === "db"
-            ? "db"
-            : "static",
-        questions: [
-          ...dailydose11.questions,
-          ...dailydose12.questions,
-        ],
-      },
-      funbrain: {
-        source: funbrain.source,
-        scheduleDate: funbrain.scheduleDate ?? funbrainScheduleDate,
-        questions: funbrain.questions,
-      },
-    });
+    );
   } catch (err) {
     console.error("[api/content/today]", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

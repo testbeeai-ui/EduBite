@@ -33,7 +33,7 @@ import { formatShortDate, todayKey } from "@/lib/utils";
 
 export function PuzzlesView() {
   const { user } = useAuth();
-  const { withAuth } = useGame();
+  const { withAuth, markPuzzleCompleted } = useGame();
   const [progress, setProgress] = useState<PuzzleProgress | null>(null);
   const [note, setNote] = useState("");
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(
@@ -79,6 +79,10 @@ export function PuzzlesView() {
   const hasAttempt = Boolean(attempt && attempt.puzzleId === puzzle.id);
   const yesterdayAttempt = progress?.attempts[yKey];
 
+  useEffect(() => {
+    if (hasAttempt) markPuzzleCompleted();
+  }, [hasAttempt, markPuzzleCompleted]);
+
   const submitAttempt = useCallback(() => {
     withAuth(() => {
       if (!user || !progress) return;
@@ -91,6 +95,7 @@ export function PuzzlesView() {
       const lockedAttempt = next.attempts[today];
       if (!lockedAttempt) return;
       setProgress(next);
+      markPuzzleCompleted();
       setSaving(true);
       setSaveError(null);
       setJustSaved(false);
@@ -104,6 +109,7 @@ export function PuzzlesView() {
         setSaving(false);
         if (result.ok) {
           setProgress(result.progress);
+          markPuzzleCompleted();
           setJustSaved(true);
           window.setTimeout(() => setJustSaved(false), 2200);
           return;
@@ -120,6 +126,7 @@ export function PuzzlesView() {
     note,
     selectedOptionIndex,
     today,
+    markPuzzleCompleted,
   ]);
 
   const attemptedCount = progress

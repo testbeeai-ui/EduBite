@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { INSPIRATION_PHENOMENA } from "@/data/inspiration-phenomena";
+import { INSPIRATION_QUOTES } from "@/data/inspiration-quotes";
+import { INSPIRATION_ROLE_MODELS } from "@/data/inspiration-role-models";
 import { PLEDGE_AM, PLEDGE_PM } from "@/data/pledges";
 import {
   getPledgeReelDayNumber,
@@ -9,9 +12,17 @@ import {
   getFunBrainForDate,
   resolveDailyDoseForClass,
 } from "@/lib/content/resolve";
-import { dailyDoseScheduleDateFor, funBrainScheduleDateFor } from "@/lib/content/schedule";
+import {
+  dailyDoseScheduleDateFor,
+  funBrainScheduleDateFor,
+} from "@/lib/content/schedule";
 import { listContentQuestions } from "@/lib/db/content-questions";
 import { loadEdubitePledgeReelDays } from "@/lib/db/pledge-reels-supabase";
+import {
+  phenomenonForDate,
+  quoteForDate,
+  roleModelForDate,
+} from "@/lib/inspiration/daily";
 import {
   isAnswerUnlocked,
   puzzleForDate,
@@ -82,6 +93,9 @@ export async function GET(request: Request) {
     const puzzle = puzzleForDate(dateKey);
     const yKey = yesterdayKey(dateKey);
     const yesterdayPuzzle = puzzleForDate(yKey);
+    const quote = quoteForDate(dateKey);
+    const phenomenon = phenomenonForDate(dateKey);
+    const roleModel = roleModelForDate(dateKey);
 
     const reelDayNumber = getPledgeReelDayNumber(joinedDate, catalog);
     const daysSinceJoin = Math.max(
@@ -93,9 +107,7 @@ export async function GET(request: Request) {
       ),
     );
     const previewDay =
-      catalog.length > 0
-        ? (daysSinceJoin % catalog.length) + 1
-        : 1;
+      catalog.length > 0 ? (daysSinceJoin % catalog.length) + 1 : 1;
     const reel = getPledgeReelForDay(previewDay, catalog);
 
     const upcomingPuzzles = Array.from({ length: 7 }, (_, i) => {
@@ -108,6 +120,36 @@ export async function GET(request: Request) {
         title: p.title,
         grade: p.grade,
         topic: p.topic,
+      };
+    });
+
+    const upcomingInspiration = Array.from({ length: 14 }, (_, i) => {
+      const key = addDaysToKey(dateKey, i);
+      const dayQuote = quoteForDate(key);
+      const dayPhenomenon = phenomenonForDate(key);
+      const dayRoleModel = roleModelForDate(key);
+      return {
+        dateKey: key,
+        quote: {
+          contentKey: dayQuote.contentKey,
+          category: dayQuote.category,
+          quote: dayQuote.quote,
+        },
+        phenomenon: {
+          contentKey: dayPhenomenon.contentKey,
+          volume: dayPhenomenon.volume,
+          number: dayPhenomenon.number,
+          subject: dayPhenomenon.subject,
+          badge: dayPhenomenon.badge,
+          question: dayPhenomenon.question,
+        },
+        roleModel: {
+          contentKey: dayRoleModel.contentKey,
+          index: dayRoleModel.index,
+          name: dayRoleModel.name,
+          tag: dayRoleModel.tag,
+          quote: dayRoleModel.quote,
+        },
       };
     });
 
@@ -127,6 +169,10 @@ export async function GET(request: Request) {
         questions: "edubite_content_questions",
         pledgeDays: "edubite_pledge_reel_days",
         pledgeSlides: "edubite_pledge_reel_slides",
+        inspirationQuotes: "edubite_inspiration_quotes",
+        inspirationPhenomena: "edubite_inspiration_phenomena",
+        inspirationRoleModels: "edubite_inspiration_role_models",
+        inspirationBlocks: "edubite_inspiration_blocks",
       },
       dailydose: {
         scheduleDate,
@@ -173,6 +219,45 @@ export async function GET(request: Request) {
           answerUnlocked: isAnswerUnlocked(yKey, today),
         },
         upcoming: upcomingPuzzles,
+      },
+      inspiration: {
+        totals: {
+          quotes: INSPIRATION_QUOTES.length,
+          phenomena: INSPIRATION_PHENOMENA.length,
+          roleModels: INSPIRATION_ROLE_MODELS.length,
+        },
+        quote: {
+          contentKey: quote.contentKey,
+          category: quote.category,
+          quote: quote.quote,
+        },
+        roleModel: {
+          contentKey: roleModel.contentKey,
+          volume: roleModel.volume,
+          number: roleModel.number,
+          index: roleModel.index,
+          avatar: roleModel.avatar,
+          name: roleModel.name,
+          tag: roleModel.tag,
+          quote: roleModel.quote,
+          bio: roleModel.bio,
+          inspireWhy: roleModel.inspireWhy,
+          pcmConnections: roleModel.pcmConnections,
+        },
+        phenomenon: {
+          contentKey: phenomenon.contentKey,
+          volume: phenomenon.volume,
+          number: phenomenon.number,
+          subject: phenomenon.subject,
+          icon: phenomenon.icon,
+          badge: phenomenon.badge,
+          question: phenomenon.question,
+          explanation: phenomenon.explanation,
+          linkedConcepts: phenomenon.linkedConcepts,
+          followUpQuestion: phenomenon.followUpQuestion,
+          source: phenomenon.source,
+        },
+        upcoming: upcomingInspiration,
       },
       pledges: {
         am: PLEDGE_AM,

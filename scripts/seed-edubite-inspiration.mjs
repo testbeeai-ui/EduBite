@@ -1,5 +1,5 @@
 /**
- * Seed edubite_inspiration_* from data/inspiration.ts
+ * Seed edubite_inspiration_* from the checked-in content catalogs.
  * Usage: node scripts/seed-edubite-inspiration.mjs
  */
 import fs from "node:fs";
@@ -74,26 +74,83 @@ if (!url || !key) {
   process.exit(1);
 }
 
-const raw = fs.readFileSync(path.join("data", "inspiration.ts"), "utf8");
-const QUOTES = extractExport(raw, "QUOTES");
-const ROLE_MODEL = extractExport(raw, "ROLE_MODEL");
-const DID_YOU_KNOW = extractExport(raw, "DID_YOU_KNOW");
+const inspirationRaw = fs.readFileSync(
+  path.join("data", "inspiration.ts"),
+  "utf8",
+);
+const quotesRaw = fs.readFileSync(
+  path.join("data", "inspiration-quotes.ts"),
+  "utf8",
+);
+const phenomenaRaw = fs.readFileSync(
+  path.join("data", "inspiration-phenomena.ts"),
+  "utf8",
+);
+const INSPIRATION_QUOTES = extractExport(quotesRaw, "INSPIRATION_QUOTES");
+const INSPIRATION_PHENOMENA = extractExport(
+  phenomenaRaw,
+  "INSPIRATION_PHENOMENA",
+);
+const ROLE_MODEL = extractExport(inspirationRaw, "ROLE_MODEL");
 
 const sb = createClient(url, key, { auth: { persistSession: false } });
 
 await sb.from("edubite_inspiration_quotes").delete().gte("id", 0);
 const { error: qErr } = await sb.from("edubite_inspiration_quotes").insert(
-  QUOTES.map((quote, i) => ({ quote, sort_order: i })),
+  INSPIRATION_QUOTES.map((item, index) => ({
+    content_key: item.contentKey,
+    category: item.category,
+    quote: item.quote,
+    sort_order: index,
+  })),
 );
 if (qErr) {
   console.error(qErr);
   process.exit(1);
 }
 
+await sb.from("edubite_inspiration_phenomena").delete().gte("id", 0);
+const { error: pErr } = await sb.from("edubite_inspiration_phenomena").insert(
+  INSPIRATION_PHENOMENA.map((item, index) => ({
+    content_key: item.contentKey,
+    volume: item.volume,
+    number: item.number,
+    subject: item.subject,
+    icon: item.icon,
+    badge: item.badge,
+    question: item.question,
+    explanation: item.explanation,
+    linked_concepts: item.linkedConcepts,
+    follow_up_question: item.followUpQuestion,
+    source: item.source,
+    sort_order: index,
+  })),
+);
+if (pErr) {
+  console.error(pErr);
+  process.exit(1);
+}
+
+const todayPhenomenon = INSPIRATION_PHENOMENA.find(
+  (item) => item.contentKey === "natural-phenomena-v1-01",
+);
+const didYouKnowFallback = todayPhenomenon
+  ? {
+      icon: todayPhenomenon.icon,
+      badge: todayPhenomenon.badge,
+      question: todayPhenomenon.question,
+      explanation: todayPhenomenon.explanation,
+      linkedConcepts: todayPhenomenon.linkedConcepts,
+      followUpQuestion: todayPhenomenon.followUpQuestion,
+    }
+  : null;
+
 const { error: bErr } = await sb.from("edubite_inspiration_blocks").upsert(
   [
     { id: "role_model", payload: ROLE_MODEL },
-    { id: "did_you_know", payload: DID_YOU_KNOW },
+    ...(didYouKnowFallback
+      ? [{ id: "did_you_know", payload: didYouKnowFallback }]
+      : []),
   ],
   { onConflict: "id" },
 );
@@ -103,6 +160,7 @@ if (bErr) {
 }
 
 console.log("OK seeded inspiration", {
-  quotes: QUOTES.length,
+  quotes: INSPIRATION_QUOTES.length,
+  phenomena: INSPIRATION_PHENOMENA.length,
   blocks: ["role_model", "did_you_know"],
 });

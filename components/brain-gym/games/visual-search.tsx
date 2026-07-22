@@ -579,17 +579,16 @@ export function VisualSearchGame({
     
     sfx.tap(soundEnabled);
     setSelectedPosition([row, col]);
-    
+
+    if (cell.symbol === targetSymbol) {
+      sfx.correct(soundEnabled);
+      setFoundPositions((prev) => new Set(prev).add(posKey));
+    } else {
+      sfx.wrong(soundEnabled);
+      setInternalLives((prev) => prev - 1);
+    }
+
     schedule(() => {
-      if (cell.symbol === targetSymbol) {
-        // Found a target
-        sfx.correct(soundEnabled);
-        setFoundPositions(prev => new Set(prev).add(posKey));
-      } else {
-        // Wrong selection
-        sfx.wrong(soundEnabled);
-        setInternalLives(prev => prev - 1);
-      }
       setSelectedPosition(null);
     }, 500);
   };

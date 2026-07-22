@@ -1,4 +1,4 @@
-import { FUNBRAIN_DURATION_SEC, RDM_PER_DOSE_CORRECT } from "@/data/config";
+import { FUNBRAIN_DURATION_SEC, RDM_PER_DOSE_CORRECT, DOSE_QUESTION_COUNT } from "@/data/config";
 import { HABIT_DEFINITIONS } from "@/data/habits";
 import { GAMES } from "@/data/brain-gym/registry";
 import { pickWithSeed } from "@/lib/brain-gym/utils/shuffle";
@@ -169,6 +169,7 @@ function normalizeFunbrain(raw: unknown): FunBrainState {
       combo: 0,
       highScore: 0,
       currentQuestionIndex: 0,
+      answers: [],
       finished: false,
       completed: false,
     };
@@ -176,6 +177,13 @@ function normalizeFunbrain(raw: unknown): FunBrainState {
   const completed =
     asBoolean(raw.completed, false) || asBoolean(raw.finished, false);
   const score = Math.max(0, Math.floor(asNumber(raw.score, 0)));
+  const answers = Array.isArray(raw.answers)
+    ? raw.answers.map((value) => {
+        if (value === null || value === undefined) return null;
+        const n = Math.floor(Number(value));
+        return Number.isInteger(n) && n >= 0 && n <= 3 ? n : null;
+      })
+    : [];
   return {
     running: false,
     timeLeft: FUNBRAIN_DURATION_SEC,
@@ -183,6 +191,7 @@ function normalizeFunbrain(raw: unknown): FunBrainState {
     combo: 0,
     highScore: Math.max(0, Math.floor(asNumber(raw.highScore, 0))),
     currentQuestionIndex: 0,
+    answers: completed ? answers : [],
     finished: completed,
     completed,
   };
@@ -206,10 +215,12 @@ function normalizeHistory(raw: unknown): DayCriteria[] {
   return raw
     .filter(isRecord)
     .map((item) => ({
-      routine: asBoolean(item.routine, false),
-      pledges: asBoolean(item.pledges, false),
+      // Legacy: `routine` → dose; Brain Gym `gyan` is dropped from streak history.
+      dose: asBoolean(item.dose, asBoolean(item.routine, false)),
+      funbrain: asBoolean(item.funbrain, false),
+      puzzles: asBoolean(item.puzzles, false),
       habits: asBoolean(item.habits, false),
-      gyan: asBoolean(item.gyan, false),
+      pledges: asBoolean(item.pledges, false),
     }))
     .slice(-27);
 }
@@ -265,7 +276,41 @@ export function normalizeGameState(raw: unknown): GameState {
       Math.floor(asNumber(raw.doseRdmCredited, defaultDoseCredit)),
     ),
     funbrainRdmCredited,
+    puzzleCompleted: asBoolean(raw.puzzleCompleted, false),
+    doseDayLog: normalizeDoseDayLog(raw.doseDayLog),
+    challengeEnrolledMonthKey:
+      typeof raw.challengeEnrolledMonthKey === "string" &&
+      /^\d{4}-\d{2}$/.test(raw.challengeEnrolledMonthKey)
+        ? raw.challengeEnrolledMonthKey
+        : null,
+    challengePuzzleSubmittedMonthKey:
+      typeof raw.challengePuzzleSubmittedMonthKey === "string" &&
+      /^\d{4}-\d{2}$/.test(raw.challengePuzzleSubmittedMonthKey)
+        ? raw.challengePuzzleSubmittedMonthKey
+        : null,
   };
+}
+
+function normalizeDoseDayLog(raw: unknown): GameState["doseDayLog"] {
+  if (!isRecord(raw)) return {};
+  const out: GameState["doseDayLog"] = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !isRecord(value)) continue;
+    const total = Math.max(1, Math.floor(asNumber(value.total, DOSE_QUESTION_COUNT)));
+    const correct = Math.max(
+      0,
+      Math.min(total, Math.floor(asNumber(value.correct, 0))),
+    );
+    const classLevel = value.classLevel === "12" ? "12" : "11";
+    out[key] = {
+      correct,
+      total,
+      pct: Math.round((100 * correct) / total),
+      completed: asBoolean(value.completed, true),
+      classLevel,
+    };
+  }
+  return out;
 }
 
 function normalizeGameStats(raw: unknown): GameStats {

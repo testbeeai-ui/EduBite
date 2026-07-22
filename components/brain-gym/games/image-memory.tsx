@@ -12,7 +12,7 @@ import { usePausableScheduler } from "./_pausable-scheduler";
 const ICONS = [
   "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔",
   "🐧", "🐦", "🐤", "🦆", "🦅", "🦉", "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🪱", "🐛", "🦋", "🐌",
-  "🐞", "🐜", "🦗", "🕷️", "🐙", "🦑", "🦐", "🦀", "🐡", "🐠", "🐟", "🐬", "🐳", "🐋", "🦈", " Crocodile",
+  "🐞", "🐜", "🦗", "🕷️", "🐙", "🦑", "🦐", "🦀", "🐡", "🐠", "🐟", "🐬", "🐳", "🐋", "🦈", "🐊",
   "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍", "🥥", "🥝",
   "🍅", "🥑", "🍆", "🥔", "🥕", "🌽", "🌶️", "🫑", "🧅", "🧄", "🥐", "🥯", "🍞", "🥖", "🥨", "🧀",
   "🥚", "🍳", "🥞", "🧇", "🥓", "🥩", "🍗", "🌭", "🍔", "🍟", "🍕", "🥪", "🌯", "🌮", "🍿", "🧈",
@@ -36,6 +36,7 @@ export function ImageMemoryGame({
   const size = difficulty === "easy" ? 3 : 4;
   const n = size * size;
   const [grid, setGrid] = useState<string[]>([]);
+  const [changedGrid, setChangedGrid] = useState<string[]>([]);
   const [phase, setPhase] = useState<"study" | "quiz">("study");
   const [answer, setAnswer] = useState<number | null>(null);
   const [lives, setLives] = useState(3);
@@ -47,8 +48,16 @@ export function ImageMemoryGame({
 
   const setup = () => {
     const g = shuffle(ICONS).slice(0, n);
+    const changedIndex = Math.floor(Math.random() * n);
+    const replacement = shuffle(
+      ICONS.filter((icon) => !g.includes(icon)),
+    )[0]!;
+    const nextChangedGrid = g.map((icon, index) =>
+      index === changedIndex ? replacement : icon,
+    );
     setGrid(g);
-    setAnswer(Math.floor(Math.random() * n));
+    setChangedGrid(nextChangedGrid);
+    setAnswer(changedIndex);
     setPhase("study");
     schedule(() => setPhase("quiz"), difficulty === "hard" ? 1200 : 2000);
   };
@@ -57,12 +66,6 @@ export function ImageMemoryGame({
     setup();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const quizGrid = () => {
-    if (answer == null) return grid;
-    const alt = shuffle(ICONS.filter((x) => x !== grid[answer]))[0]!;
-    return grid.map((x, i) => (i === answer ? alt : x));
-  };
 
   const pick = (i: number) => {
     if (paused || phase !== "quiz" || completedRef.current) return;
@@ -90,7 +93,7 @@ export function ImageMemoryGame({
     }
   };
 
-  const shown = phase === "study" ? grid : quizGrid();
+  const shown = phase === "study" ? grid : changedGrid;
 
   return (
     <GameBoard>

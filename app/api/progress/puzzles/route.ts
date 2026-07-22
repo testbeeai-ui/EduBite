@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { allowProgressWrite } from "@/lib/api/rate-limit";
 import { getRequestUser } from "@/lib/auth/server";
 import {
   assertPayloadSize,
@@ -35,6 +36,17 @@ export async function PUT(request: Request) {
     const user = await getRequestUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const limited = allowProgressWrite(user.id);
+    if (!limited.ok) {
+      return NextResponse.json(
+        { error: "Too many saves", retryAfterSec: limited.retryAfterSec },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limited.retryAfterSec) },
+        },
+      );
     }
 
     let body: unknown;

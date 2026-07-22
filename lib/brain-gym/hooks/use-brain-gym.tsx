@@ -14,6 +14,7 @@ import {
   applySessionResult,
   isDifficultyLocked,
   loadBrainGym,
+  queueBrainGymSession,
   saveBrainGym,
   setSound,
   toggleFavorite,
@@ -53,6 +54,11 @@ interface BrainGymContextValue {
 }
 
 const BrainGymContext = createContext<BrainGymContextValue | null>(null);
+const SESSION_SAVE_RETRY_DELAYS_MS = [0, 750, 2_000] as const;
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 export function BrainGymProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -96,6 +102,28 @@ export function BrainGymProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(id);
   }, [activeGameId, tickGyan]);
 
+  useEffect(() => {
+    if (!userId) return;
+    let lastFetchAt = 0;
+    const MIN_REFETCH_MS = 60_000;
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastFetchAt < MIN_REFETCH_MS) return;
+      lastFetchAt = now;
+      const mutationSeq = ++mutationSeqRef.current;
+      void loadBrainGym(userId).then((next) => {
+        if (mutationSeq === mutationSeqRef.current) setProgress(next);
+      });
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [userId]);
+
   const openGame = useCallback(
     (id: GameId, daily = false) => {
       withAuth(() => {
@@ -131,25 +159,34 @@ export function BrainGymProvider({ children }: { children: ReactNode }) {
       setProgress(next);
       setLastResult({ result, rdmGain, newBadges });
       const sessionId = crypto.randomUUID();
-      const mutationSeq = ++mutationSeqRef.current;
-      void saveBrainGym(userId, next, {
-        type: "session",
+      const sessionMutation = {
+        type: "session" as const,
         sessionId,
         gameId: activeGameId,
         result,
         isDaily: isDailyRun,
         baseProgress: progress,
-      }).then((save) => {
-        if (!save.ok) return;
-        if (mutationSeq === mutationSeqRef.current) {
-          setProgress(save.progress);
+      };
+      if (userId) {
+        queueBrainGymSession(userId, next, sessionMutation);
+      }
+      const mutationSeq = ++mutationSeqRef.current;
+      void (async () => {
+        for (const delayMs of SESSION_SAVE_RETRY_DELAYS_MS) {
+          if (delayMs > 0) await wait(delayMs);
+          const save = await saveBrainGym(userId, next, sessionMutation);
+          if (!save.ok) continue;
+          if (mutationSeq === mutationSeqRef.current) {
+            setProgress(save.progress);
+          }
+          if (save.gameRdm !== null) {
+            syncRdm(save.gameRdm);
+          } else if (rdmGain > 0) {
+            awardRDM(rdmGain);
+          }
+          return;
         }
-        if (save.gameRdm !== null) {
-          syncRdm(save.gameRdm);
-        } else if (rdmGain > 0) {
-          awardRDM(rdmGain);
-        }
-      });
+      })();
       return { rdmGain, newBadges };
     },
     [progress, activeGameId, isDailyRun, userId, awardRDM, syncRdm],

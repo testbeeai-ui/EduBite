@@ -6,10 +6,10 @@ import { useGame } from "@/lib/store/game-provider";
 
 function habitsMessage(done: number, total: number) {
   if (done === 0) {
-    return "Open Habits and check off what you've completed today — every habit counts toward your streak.";
+    return "Open Habits and check off what you've completed today — habits are one of five streak activities.";
   }
   if (done === total) {
-    return "All habits checked — you're fully protected for today.";
+    return "All habits checked — one streak criterion down; finish the rest of today's five.";
   }
   return `${done} of ${total} done — head to Habits to finish the rest.`;
 }

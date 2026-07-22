@@ -1,288 +1,215 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import type { HabitState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const BURST_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315];
-
-function CheckBurst({ show }: { show: boolean }) {
-  if (!show) return null;
-
-  return (
-    <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none z-20">
-      {BURST_ANGLES.map((deg) => (
-        <motion.span
-          key={deg}
-          className="absolute left-1/2 top-1/2 w-1.5 h-1.5 rounded-full bg-teal"
-          initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
-          animate={{
-            x: Math.cos((deg * Math.PI) / 180) * 22,
-            y: Math.sin((deg * Math.PI) / 180) * 22,
-            opacity: 0,
-            scale: 0.2,
-          }}
-          transition={{ duration: 0.55, ease: "easeOut" }}
-        />
-      ))}
-    </span>
-  );
-}
-
-function HabitCheckbox({ done, popping }: { done: boolean; popping: boolean }) {
-  return (
-    <motion.div
-      layout
-      animate={popping ? { scale: 1.35, rotate: -8 } : { scale: 1, rotate: 0 }}
-      transition={{ type: "spring", stiffness: 520, damping: 16 }}
-      className={cn(
-        "relative w-6 h-6 rounded-[6px] flex items-center justify-center shrink-0 border-[1.5px] transition-colors duration-300",
-        done
-          ? "bg-teal border-teal shadow-[0_0_20px_rgba(45,212,191,0.45)]"
-          : "border-[var(--line)] bg-[var(--surface)]/80",
-      )}
-    >
-      <AnimatePresence mode="wait">
-        {done ? (
-          <motion.span
-            key="check"
-            initial={{ scale: 0, opacity: 0, rotate: -40 }}
-            animate={{ scale: 1, opacity: 1, rotate: 0 }}
-            exit={{ scale: 0.6, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 600, damping: 18 }}
-            className="text-[#04141c] text-sm font-bold leading-none"
-          >
-            ✓
-          </motion.span>
-        ) : (
-          <motion.span
-            key="empty"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="w-2 h-2 rounded-full bg-[var(--line)]/60"
-          />
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
-
 interface HabitRowProps {
   habit: HabitState;
-  index: number;
-  onToggle: (id: string) => void;
+  openInfoId: string | null;
+  onToggleInfo: (id: string) => void;
+  onToggleDone: (id: string) => void;
 }
 
-export function HabitRow({ habit, index, onToggle }: HabitRowProps) {
-  const [burst, setBurst] = useState(false);
-  const [popping, setPopping] = useState(false);
+export function HabitRow({
+  habit,
+  openInfoId,
+  onToggleInfo,
+  onToggleDone,
+}: HabitRowProps) {
+  const [toast, setToast] = useState(false);
   const prevDone = useRef(habit.done);
+  const infoOpen = openInfoId === habit.id;
 
   useEffect(() => {
     if (habit.done && !prevDone.current) {
-      setBurst(true);
-      setPopping(true);
-      const t1 = window.setTimeout(() => setBurst(false), 600);
-      const t2 = window.setTimeout(() => setPopping(false), 400);
-      return () => {
-        window.clearTimeout(t1);
-        window.clearTimeout(t2);
-      };
+      setToast(true);
+      const timer = window.setTimeout(() => setToast(false), 1100);
+      prevDone.current = habit.done;
+      return () => window.clearTimeout(timer);
     }
     prevDone.current = habit.done;
   }, [habit.done]);
 
   return (
-    <motion.button
-      type="button"
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.015, duration: 0.22 }}
-      whileTap={{ scale: 0.985 }}
-      onClick={() => onToggle(habit.id)}
+    <div
       className={cn(
-        "relative flex items-center gap-2.5 px-3 sm:px-4 py-2 w-full text-left border-b border-[var(--line)] last:border-b-0 overflow-hidden",
-        "transition-colors duration-300",
-        habit.done
-          ? "bg-gradient-to-r from-teal/[0.12] via-teal/[0.04] to-transparent"
-          : "hover:bg-white/[0.03]",
+        "relative flex items-center gap-3.5 border-t border-white/[0.06] py-[15px] px-1 first:border-t-0",
+        infoOpen && "z-50",
       )}
     >
-      {habit.done && (
-        <motion.span
-          layoutId={`habit-glow-${habit.id}`}
-          className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-teal shadow-[0_0_12px_rgba(45,212,191,0.6)]"
-          initial={{ scaleY: 0 }}
-          animate={{ scaleY: 1 }}
-          transition={{ type: "spring", stiffness: 400, damping: 22 }}
-        />
-      )}
-
-      <motion.div
-        animate={
-          popping
-            ? { scale: 1.18, rotate: -6 }
-            : habit.done
-              ? { scale: 1.05 }
-              : { scale: 1, rotate: 0 }
-        }
-        transition={{ type: "spring", stiffness: 480, damping: 14 }}
-        className="w-8 h-8 rounded-[9px] flex items-center justify-center text-[15px] shrink-0 relative z-10"
+      <div
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] text-[18px]"
         style={{ background: habit.bg }}
+        aria-hidden
       >
         {habit.icon}
-      </motion.div>
+      </div>
 
-      <div className="flex-1 min-w-0 relative z-10">
-        <motion.div
-          animate={habit.done ? { x: 2 } : { x: 0 }}
+      <div className="min-w-0 flex-1">
+        <p
           className={cn(
-            "text-sm font-semibold transition-colors duration-300",
-            habit.done ? "text-[var(--text)]" : "text-[var(--text)]/90",
+            "m-0 text-[14.5px] font-bold leading-snug transition-opacity",
+            habit.done &&
+              "opacity-55 line-through decoration-[var(--text-dim)]/70",
           )}
         >
           {habit.name}
-        </motion.div>
-        <div className="text-[10.5px] text-[var(--text-dim)] mt-px leading-tight line-clamp-1">{habit.sub}</div>
+        </p>
+        <p
+          className={cn(
+            "m-0 mt-0.5 text-xs text-[var(--text-dim)]",
+            habit.done && "opacity-45",
+          )}
+        >
+          {habit.sub}
+        </p>
       </div>
 
-      <div className="relative z-10 ml-auto">
-        <HabitCheckbox done={habit.done} popping={popping} />
+      <div
+          className={cn(
+            "pointer-events-none absolute right-[70px] top-1.5 z-10 rounded-full border border-teal/40 bg-teal/15 px-2.5 py-1 font-mono text-xs font-bold text-teal",
+            toast ? "animate-[habitToast_1.1s_ease_forwards]" : "translate-y-1.5 opacity-0",
+          )}
+      >
+        +{habit.rdm} RDM
       </div>
 
-      <CheckBurst show={burst} />
-    </motion.button>
-  );
-}
-
-function progressMessage(done: number, total: number): string {
-  if (done === 0) return "Tap habits you've finished today.";
-  if (done === 1) return "First one locked — momentum starts here.";
-  if (done < total / 2) return "Keep going — you're showing up.";
-  if (done < total - 1) return "More than halfway there.";
-  if (done === total - 1) return "One more for a full wellbeing day.";
-  return `All ${total} done — protected for today.`;
-}
-
-function milestoneMessage(done: number, total: number): string | null {
-  if (done === 3) return "3 habits — rhythm unlocked";
-  if (done === 6) return "6 habits — you're on fire today";
-  if (done === total) return `Perfect day — all ${total} habits complete`;
-  return null;
-}
-
-export function HabitsProgressHero({
-  done,
-  total,
-}: {
-  done: number;
-  total: number;
-}) {
-  const pct = total > 0 ? (done / total) * 100 : 0;
-
-  return (
-    <div className="px-3 sm:px-4 pt-2 pb-2 border-b border-[var(--line)] bg-gradient-to-br from-emerald/[0.08] via-transparent to-blue/[0.05]">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[10px] sm:text-[11px] font-mono uppercase tracking-[0.1em] text-teal/90">
-            Today&apos;s progress
-          </p>
-          <p className="font-display font-bold text-2xl sm:text-[28px] text-[var(--text)] tabular-nums leading-none mt-0.5">
-            <motion.span
-              key={done}
-              initial={{ scale: 1.2, color: "#2dd4bf" }}
-              animate={{ scale: 1, color: "#f6f7fb" }}
-              transition={{ type: "spring", stiffness: 400, damping: 18 }}
-              className="inline-block"
-            >
-              {done}
-            </motion.span>
-            <span className="text-[var(--text-dim)] text-lg sm:text-xl font-semibold">
-              {" "}/ {total}
-            </span>
-          </p>
-        </div>
-        <motion.div
-          className="w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center shrink-0"
-          animate={
-            done === total
-              ? { scale: 1.15, rotate: 8 }
-              : done > 0
-                ? { scale: 1.08 }
-                : { scale: 1, rotate: 0 }
-          }
-          transition={{ duration: 0.45, ease: "easeInOut" }}
-          style={{
-            background: `conic-gradient(#2dd4bf ${pct}%, var(--line) 0)`,
+      <div className="relative flex shrink-0 items-center gap-2.5">
+        <button
+          type="button"
+          aria-label={`About ${habit.name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleInfo(habit.id);
           }}
+          className="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-teal bg-transparent font-mono text-[11px] font-bold text-teal"
         >
-          <span className="w-8 h-8 rounded-full bg-[var(--surface)] flex items-center justify-center text-sm">
-            {done === total ? "🏆" : done >= 6 ? "🔥" : done >= 3 ? "⚡" : "🌱"}
-          </span>
-        </motion.div>
-      </div>
+          i
+        </button>
 
-      <div className="flex items-center gap-2 mt-1.5">
-        <div className="flex-1 h-1.5 rounded-full bg-[var(--line)] overflow-hidden min-w-0">
-          <motion.div
-            className="h-full bg-gradient-to-r from-teal via-teal to-blue rounded-full"
-            initial={false}
-            animate={{ width: `${pct}%` }}
-            transition={{ type: "spring", stiffness: 120, damping: 20 }}
-          />
-        </div>
-        <motion.p
-          key={progressMessage(done, total)}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-[10px] sm:text-[11px] text-[var(--text-dim)] leading-none shrink-0 max-w-[48%] truncate text-right"
+        <button
+          type="button"
+          aria-label={habit.done ? `Uncheck ${habit.name}` : `Complete ${habit.name}`}
+          onClick={() => onToggleDone(habit.id)}
+          className={cn(
+            "relative flex h-7 w-7 items-center justify-center rounded-[9px] border transition-colors",
+            habit.done
+              ? "border-teal bg-teal"
+              : "border-white/[0.09] bg-white/[0.02]",
+          )}
         >
-          {progressMessage(done, total)}
-        </motion.p>
+          {habit.done ? (
+            <span className="text-sm font-extrabold leading-none text-[#04140D]">
+              ✓
+            </span>
+          ) : (
+            <span className="h-2 w-2 rounded-full bg-[#5C6270]" />
+          )}
+        </button>
+
+        <div
+          className={cn(
+            "absolute right-0 top-[calc(100%+8px)] z-50 w-[300px] max-w-[min(300px,calc(100vw-2rem))] rounded-2xl border border-white/[0.09] bg-[#171A21] p-[18px] shadow-[0_24px_60px_-12px_rgba(0,0,0,0.6)] transition-all duration-150 sm:w-[300px]",
+            infoOpen
+              ? "pointer-events-auto translate-y-0 scale-100 opacity-100"
+              : "pointer-events-none -translate-y-1.5 scale-[0.98] opacity-0",
+          )}
+        >
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="m-0 text-sm font-bold">{habit.name}</p>
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => onToggleInfo(habit.id)}
+              className="border-0 bg-transparent text-base leading-none text-[#5C6270]"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="mb-3 mt-0 text-[12.5px] leading-relaxed text-[var(--text-dim)]">
+            {habit.desc}
+          </p>
+          <ul className="mb-3.5 flex list-none flex-col gap-[7px] p-0">
+            {habit.benefits.map((benefit) => (
+              <li
+                key={benefit}
+                className="flex gap-2 text-xs leading-snug text-[var(--text-dim)]"
+              >
+                <span className="shrink-0 font-extrabold text-teal">✓</span>
+                <span>{benefit}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex items-center justify-between rounded-[11px] border border-teal/35 bg-teal/15 px-3 py-2.5">
+            <span className="text-[11.5px] font-bold text-teal">
+              Complete today to earn
+            </span>
+            <b className="font-mono text-[13px] text-teal">+{habit.rdm} RDM</b>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-export function HabitsMilestoneToast({
+export function HabitsProgressHero({
   done,
   total,
+  rdmEarned,
+  pulseRdm,
 }: {
   done: number;
   total: number;
+  rdmEarned: number;
+  pulseRdm: boolean;
 }) {
-  const prevDone = useRef(done);
-  const [toast, setToast] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (done > prevDone.current) {
-      const msg = milestoneMessage(done, total);
-      if (msg) {
-        setToast(msg);
-        const t = window.setTimeout(() => setToast(null), 2400);
-        prevDone.current = done;
-        return () => window.clearTimeout(t);
-      }
-    }
-    prevDone.current = done;
-  }, [done, total]);
+  const pct = total > 0 ? (done / total) * 100 : 0;
+  const hint =
+    done === total
+      ? `All ${total} done — habits locked in for today's streak.`
+      : "Tap habits you've finished today.";
 
   return (
-    <AnimatePresence>
-      {toast && (
-        <motion.div
-          initial={{ opacity: 0, y: -12, scale: 0.92 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -8, scale: 0.95 }}
-          transition={{ type: "spring", stiffness: 420, damping: 24 }}
-          className="fixed top-20 left-1/2 -translate-x-1/2 z-[80] px-4 py-2.5 rounded-full border border-teal/40 bg-[var(--surface)]/95 backdrop-blur-md shadow-[0_8px_32px_rgba(45,212,191,0.25)] text-sm font-semibold text-teal whitespace-nowrap"
-        >
-          ✨ {toast}
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div className="mb-0">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-teal">
+            Today&apos;s Progress
+          </div>
+          <div className="flex flex-wrap items-baseline gap-1.5">
+            <b className="text-[32px] font-extrabold leading-none sm:text-[38px]">
+              {done}
+            </b>
+            <span className="text-xl font-semibold text-[#5C6270]">
+              / {total}
+            </span>
+            <span
+              className={cn(
+                "ml-0 mt-2 inline-flex items-center gap-1.5 rounded-full border border-teal/35 bg-teal/15 px-3 py-1.5 font-mono text-[11.5px] font-bold text-teal sm:ml-3.5 sm:mt-0",
+                pulseRdm && "animate-[habitChipPulse_0.5s_ease]",
+              )}
+            >
+              ⭐ {rdmEarned} RDM earned today
+            </span>
+          </div>
+        </div>
+        <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border border-teal/35 bg-[#0F2620] text-[22px]">
+          🌱
+        </div>
+      </div>
+
+      <div className="mb-[22px] flex items-center gap-3.5">
+        <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/[0.08]">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-teal to-[#5FE3B8] transition-[width] duration-300 ease-out"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <div className="shrink-0 whitespace-nowrap text-xs text-[#5C6270]">
+          {hint}
+        </div>
+      </div>
+    </div>
   );
 }

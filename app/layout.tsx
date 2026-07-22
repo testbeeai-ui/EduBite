@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Baloo_2, Inter, JetBrains_Mono } from "next/font/google";
 import { AuthProvider } from "@/lib/auth/auth-provider";
+import { AppClockProvider } from "@/lib/clock/app-clock";
 import { GameProvider } from "@/lib/store/game-provider";
 import "./globals.css";
 
@@ -44,7 +45,9 @@ export default function RootLayout({
         className={`${baloo.variable} ${inter.variable} ${jetbrains.variable} antialiased`}
       >
         <AuthProvider>
-          <GameProvider>{children}</GameProvider>
+          <AppClockProvider>
+            <GameProvider>{children}</GameProvider>
+          </AppClockProvider>
         </AuthProvider>
       </body>
     </html>

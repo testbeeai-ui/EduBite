@@ -3,10 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameComponentProps } from "@/lib/brain-gym/types";
 import { sfx } from "@/lib/brain-gym/utils/sound";
-import { difficultyMultiplier } from "@/lib/brain-gym/storage";
 import { GameBoard, StatusLine } from "./_shared";
 import { cn } from "@/lib/utils";
 import { usePausableScheduler } from "./_pausable-scheduler";
+
+const MAX_FALSE_STARTS_FOR_WIN = 2;
+
+export function isReactionRunWon(falseStarts: number, score: number): boolean {
+  return falseStarts <= MAX_FALSE_STARTS_FOR_WIN && score >= 60;
+}
+
+export function reactionScoreForMs(
+  reactionMs: number,
+  difficulty: GameComponentProps["difficulty"],
+): number {
+  void difficulty;
+  const humanAdjustedMs = Math.max(120, Math.min(1_000, reactionMs));
+  const score = 100 - Math.max(0, humanAdjustedMs - 180) * 0.25;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
 
 export function ReactionTimeGame({
   difficulty,
@@ -22,12 +37,15 @@ export function ReactionTimeGame({
   const goAt = useRef(0);
   const activeReactionMsRef = useRef(0);
   const completedRef = useRef(false);
+  const inputLockedRef = useRef(false);
+  const falseStartsRef = useRef(0);
   const armCancelRef = useRef<(() => void) | null>(null);
   const { schedule } = usePausableScheduler(paused);
   const [start] = useState(() => Date.now());
 
   const arm = () => {
     if (completedRef.current) return;
+    inputLockedRef.current = false;
     setPhase("ready");
     const delay =
       (difficulty === "hard" ? 800 : 1200) + Math.random() * (difficulty === "easy" ? 2500 : 1800);
@@ -58,15 +76,30 @@ export function ReactionTimeGame({
   }, [paused, phase]);
 
   const tap = () => {
-    if (paused || completedRef.current) return;
+    if (paused || completedRef.current || inputLockedRef.current) return;
     if (phase === "ready") {
+      inputLockedRef.current = true;
       armCancelRef.current?.();
+      falseStartsRef.current += 1;
       sfx.wrong(soundEnabled);
+      if (falseStartsRef.current > MAX_FALSE_STARTS_FOR_WIN) {
+        completedRef.current = true;
+        onComplete({
+          score: 0,
+          won: false,
+          timeMs: Date.now() - start,
+          difficulty,
+          extra: { falseStarts: falseStartsRef.current },
+        });
+        setPhase("done");
+        return;
+      }
       setPhase("early");
       schedule(arm, 800);
       return;
     }
     if (phase !== "go") return;
+    inputLockedRef.current = true;
     const ms = Math.max(
       1,
       Math.round(activeReactionMsRef.current || performance.now() - goAt.current),
@@ -77,19 +110,30 @@ export function ReactionTimeGame({
     const r = round + 1;
     setRound(r);
     const avg = next.reduce((a, b) => a + b, 0) / next.length;
+    const reactionScores = next.map((reactionMs) =>
+      reactionScoreForMs(reactionMs, difficulty),
+    );
+    const averageReactionScore =
+      reactionScores.reduce((sum, value) => sum + value, 0) /
+      reactionScores.length;
     const score = Math.max(
-      50,
-      Math.round((600 - avg) * difficultyMultiplier(difficulty) * (next.length / rounds)),
+      1,
+      Math.round(
+        averageReactionScore - falseStartsRef.current * 5,
+      ),
     );
     onScoreChange?.(score);
     if (r >= rounds) {
       completedRef.current = true;
       onComplete({
-        score: Math.round(score * (next.length / rounds) + (600 - avg)),
-        won: true,
+        score,
+        won: isReactionRunWon(falseStartsRef.current, score),
         timeMs: Date.now() - start,
         difficulty,
-        extra: { avgMs: Math.round(avg) },
+        extra: {
+          avgMs: Math.round(avg),
+          falseStarts: falseStartsRef.current,
+        },
       });
       setPhase("done");
     } else {

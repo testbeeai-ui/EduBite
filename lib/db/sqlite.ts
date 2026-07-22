@@ -395,6 +395,10 @@ export function writeNormalizedGameState(
                 existing.funbrainRdmCredited,
               )
             : incoming.funbrainRdmCredited,
+        puzzleCompleted:
+          incoming.lastActiveDate === existing.lastActiveDate
+            ? incoming.puzzleCompleted || existing.puzzleCompleted
+            : incoming.puzzleCompleted,
       };
     } catch {
       normalized = incoming;
