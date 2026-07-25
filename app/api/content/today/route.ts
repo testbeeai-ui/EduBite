@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveContentDateKey } from "@/lib/clock/resolve-content-date";
 import {
   getFunBrainForDate,
   resolveDailyDoseForClass,
@@ -7,14 +8,18 @@ import {
   dailyDoseScheduleDateFor,
   funBrainScheduleDateFor,
 } from "@/lib/content/schedule";
-import { todayKey } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** Published Edubite questions for today (or static fallback). Guests allowed. */
-export async function GET() {
+/**
+ * Published Edubite questions for a calendar day (or static fallback).
+ * Optional `dateKey` follows App Clock / Date traveler (±120 days).
+ */
+export async function GET(request: Request) {
   try {
-    const dateKey = todayKey();
+    const url = new URL(request.url);
+    const dateKey = resolveContentDateKey(url.searchParams.get("dateKey"));
     const scheduleDate = dailyDoseScheduleDateFor(dateKey);
     const funbrainScheduleDate = funBrainScheduleDateFor(dateKey);
     const [dailydose11, dailydose12, funbrain] = await Promise.all([
@@ -58,7 +63,7 @@ export async function GET() {
       {
         headers: {
           "Cache-Control":
-            "public, s-maxage=120, stale-while-revalidate=1800, max-age=30",
+            "private, max-age=30, stale-while-revalidate=120",
         },
       },
     );

@@ -13,9 +13,11 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { VIEW_TO_PATH, PATH_TO_VIEW } from "@/lib/routes";
-import { DOSE_QUESTION_COUNT, FEATURES, FUNBRAIN_DURATION_SEC } from "@/data/config";
+import { DOSE_QUESTION_COUNT, DOSE_DURATION_SEC, FEATURES, FUNBRAIN_DURATION_SEC } from "@/data/config";
 import { HABIT_DEFINITIONS } from "@/data/habits";
+import { HABIT_ID_TO_RDM_KEY } from "@/data/rdm-rewards";
 import { FUNBRAIN_QUESTIONS_PER_DAY } from "@/lib/content/schedule";
+import { getLiveRdmAmount } from "@/lib/rdm/live-amounts";
 import {
   computeStreak,
   createInitialState,
@@ -24,14 +26,19 @@ import {
   getGyanCards,
   getLevelInfo,
   habitsProgress,
-  RDM_PER_DOSE_CORRECT,
+  isFullDay,
+  mergeDayCriteriaRecord,
+  repairDayCriteriaLogFromSources,
   todayCriteria,
 } from "@/lib/gamification";
 import {
   isInEntryWindow,
   getChallengeMonthMeta,
-  MONTHLY_CHALLENGE_TARGET_RDM,
+  getMonthlyChallengeEntryStakeRdm,
+  getMonthlyChallengeTargetRdm,
+  isEnrolledForChallengeMonth,
   recordDoseDayInState,
+  withChallengeEnrollment,
 } from "@/lib/challenge/monthly";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { storePendingView, readPendingView, clearPendingView } from "@/lib/auth/pending-action";
@@ -56,6 +63,8 @@ type GameAction =
   | { type: "TOGGLE_HABIT"; payload: string }
   | { type: "ANSWER_DOSE"; payload: { selected: number; correct: number } }
   | { type: "NEXT_DOSE"; payload?: { questionCount: number } }
+  | { type: "START_DOSE" }
+  | { type: "TICK_DOSE"; payload?: { questionCount: number } }
   | { type: "RESET_DOSE" }
   | { type: "START_FUNBRAIN" }
   | { type: "TICK_FUNBRAIN" }
@@ -76,26 +85,91 @@ type GameAction =
   | { type: "SET_RDM"; payload: number }
   | { type: "SET_PUZZLE_COMPLETED"; payload?: boolean }
   | { type: "ENROLL_MONTHLY_CHALLENGE"; payload: string }
+  | {
+      type: "APPLY_CHALLENGE_ENROLLMENT";
+      payload: { monthKey: string; rdm: number };
+    }
   | { type: "MARK_CHALLENGE_PUZZLE_SUBMITTED"; payload: string }
+  | {
+      type: "PUSH_NOTIFICATION";
+      payload: { id: string; icon: string; text: string };
+    }
+  | { type: "CLEAR_NOTIFICATION"; payload: string }
   | { type: "ROLL_DAY" };
 
 function withDerived(state: GameState): GameState {
-  const streak = computeStreak(state);
-  return { ...state, streak };
+  const today = todayKey();
+  const live = todayCriteria(state);
+  const prevDay = state.dayCriteriaLog?.[today];
+  // Always record under App Clock today once lastActiveDate matches (caller rolls first).
+  const dayCriteriaLog =
+    state.lastActiveDate === today
+      ? {
+          ...(state.dayCriteriaLog ?? {}),
+          [today]: mergeDayCriteriaRecord(prevDay, live),
+        }
+      : (state.dayCriteriaLog ?? {});
+  const next = { ...state, dayCriteriaLog };
+  const streak = computeStreak(next, today);
+  return { ...next, streak };
 }
 
 function rollDayIfNeeded(state: GameState): GameState {
   const today = todayKey();
   if (state.lastActiveDate === today) return state;
 
-  // Snapshot yesterday's dose score into the challenge log before reset.
-  const withDoseLog = recordDoseDayInState(state, state.lastActiveDate);
-  const yesterdayCriteria = todayCriteria(withDoseLog);
+  // Snapshot the day we're leaving so completions are not lost on clock jumps.
+  const leavingKey = state.lastActiveDate;
+  const leavingLive = todayCriteria(state);
+  const leavingPrev = state.dayCriteriaLog?.[leavingKey];
+  const snappedLeaving = mergeDayCriteriaRecord(leavingPrev, leavingLive);
+  const snappedLog = {
+    ...(state.dayCriteriaLog ?? {}),
+    [leavingKey]: snappedLeaving,
+  };
+  const stateWithSnap = { ...state, dayCriteriaLog: snappedLog };
+
+  // Admin clock jumped backward — keep logs; retarget "today" without wiping history.
+  if (today < leavingKey) {
+    const saved = snappedLog[today];
+    if (saved) {
+      const doneHabitIds = new Set(saved.habitsDone ?? []);
+      return withDerived({
+        ...stateWithSnap,
+        lastActiveDate: today,
+        puzzleCompleted: saved.puzzles,
+        pledgeAM: Boolean(saved.pledgeAM || saved.pledges),
+        pledgePM: Boolean(saved.pledgePM || saved.pledges),
+        dose: { ...stateWithSnap.dose, completed: saved.dose },
+        funbrain: { ...stateWithSnap.funbrain, completed: saved.funbrain },
+        habits: stateWithSnap.habits.map((h) => ({
+          ...h,
+          done:
+            doneHabitIds.size > 0
+              ? doneHabitIds.has(h.id)
+              : Boolean(saved.habits),
+        })),
+      });
+    }
+    return withDerived({ ...stateWithSnap, lastActiveDate: today });
+  }
+
+  // Snapshot yesterday's dose score + full criteria before reset.
+  const withDoseLog = recordDoseDayInState(stateWithSnap, leavingKey);
+  const yesterdayCriteria = mergeDayCriteriaRecord(
+    withDoseLog.dayCriteriaLog?.[leavingKey],
+    todayCriteria(withDoseLog),
+  );
   const history = [...withDoseLog.history, yesterdayCriteria].slice(-27);
+  const dayCriteriaLog = {
+    ...(withDoseLog.dayCriteriaLog ?? {}),
+    [leavingKey]: yesterdayCriteria,
+  };
 
   return withDerived({
     ...withDoseLog,
     history,
+    dayCriteriaLog,
     lastActiveDate: today,
     doseRdmCredited: 0,
     funbrainRdmCredited: 0,
@@ -108,6 +182,8 @@ function rollDayIfNeeded(state: GameState): GameState {
       locked: false,
       correct: 0,
       completed: false,
+      running: false,
+      timeLeft: DOSE_DURATION_SEC,
       index11: 0,
       locked11: false,
       correct11: 0,
@@ -137,6 +213,11 @@ function rollDayIfNeeded(state: GameState): GameState {
 }
 
 function gameReducer(state: GameState, action: GameAction): GameState {
+  // Keep lastActiveDate aligned with App Clock before any task mutation so
+  // completions land in dayCriteriaLog under the simulated calendar day.
+  if (action.type !== "HYDRATE" && action.type !== "ROLL_DAY") {
+    state = rollDayIfNeeded(state);
+  }
   switch (action.type) {
     case "HYDRATE": {
       const hydrated = rollDayIfNeeded(action.payload);
@@ -161,20 +242,27 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const habit = state.habits.find((h) => h.id === action.payload);
       if (!habit) return state;
       const nextDone = !habit.done;
-      const rdmDelta = nextDone ? habit.rdm : -habit.rdm;
+      const rewardKey = HABIT_ID_TO_RDM_KEY[habit.id];
+      const habitRdm = rewardKey
+        ? getLiveRdmAmount(rewardKey)
+        : habit.rdm;
+      const rdmDelta = nextDone ? habitRdm : -habitRdm;
       return withDerived({
         ...state,
         rdm: Math.max(0, state.rdm + rdmDelta),
         habits: state.habits.map((h) =>
-          h.id === action.payload ? { ...h, done: nextDone } : h,
+          h.id === action.payload ? { ...h, done: nextDone, rdm: habitRdm } : h,
         ),
       });
     }
     case "ANSWER_DOSE": {
-      if (state.dose.locked || state.dose.completed) return state;
+      if (!state.dose.running || state.dose.locked || state.dose.completed) {
+        return state;
+      }
       const isCorrect = action.payload.selected === action.payload.correct;
+      const rdmPerCorrect = getLiveRdmAmount("dose.per_correct");
       const correct = state.dose.correct + (isCorrect ? 1 : 0);
-      const earned = correct * RDM_PER_DOSE_CORRECT;
+      const earned = correct * rdmPerCorrect;
       const rdmDelta = Math.max(0, earned - state.doseRdmCredited);
       const is11 = state.dose.currentClass === "11";
       const newAnswers11 = is11
@@ -201,6 +289,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       });
     }
     case "NEXT_DOSE": {
+      if (!state.dose.running || state.dose.completed) return state;
       const questionCount =
         action.payload?.questionCount && action.payload.questionCount > 0
           ? action.payload.questionCount
@@ -214,6 +303,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             ...state.dose,
             index: nextIndex,
             locked: false,
+            running: false,
             completed: true,
             completed11: is11 ? true : state.dose.completed11,
             completed12: !is11 ? true : state.dose.completed12,
@@ -238,6 +328,72 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         },
       };
     }
+    case "START_DOSE": {
+      if (state.dose.completed || state.dose.running) return state;
+      return {
+        ...state,
+        dose: {
+          ...state.dose,
+          running: true,
+          timeLeft: DOSE_DURATION_SEC,
+          index: 0,
+          locked: false,
+          correct: 0,
+          answers11:
+            state.dose.currentClass === "11" ? [] : state.dose.answers11 || [],
+          answers12:
+            state.dose.currentClass === "12" ? [] : state.dose.answers12 || [],
+          index11: state.dose.currentClass === "11" ? 0 : state.dose.index11,
+          locked11: state.dose.currentClass === "11" ? false : state.dose.locked11,
+          correct11: state.dose.currentClass === "11" ? 0 : state.dose.correct11,
+          index12: state.dose.currentClass === "12" ? 0 : state.dose.index12,
+          locked12: state.dose.currentClass === "12" ? false : state.dose.locked12,
+          correct12: state.dose.currentClass === "12" ? 0 : state.dose.correct12,
+        },
+      };
+    }
+    case "TICK_DOSE": {
+      if (!state.dose.running || state.dose.completed) return state;
+      const timeLeft = state.dose.timeLeft - 1;
+      if (timeLeft > 0) {
+        return {
+          ...state,
+          dose: { ...state.dose, timeLeft },
+        };
+      }
+      const questionCount =
+        action.payload?.questionCount && action.payload.questionCount > 0
+          ? action.payload.questionCount
+          : DOSE_QUESTION_COUNT;
+      const is11 = state.dose.currentClass === "11";
+      const gyanAlready = state.gyanUnlockedIds.includes("velocity-vs-speed");
+      const completedState = withDerived({
+        ...state,
+        gyanUnlockedIds: gyanAlready
+          ? state.gyanUnlockedIds
+          : [...state.gyanUnlockedIds, "velocity-vs-speed"],
+        notifications: gyanAlready
+          ? state.notifications
+          : [
+              {
+                id: "gyan-unlock",
+                icon: "✨",
+                text: `New ${FEATURES.gyan.label} card unlocked from today's DailyDose.`,
+              },
+              ...state.notifications.filter((n) => n.id !== "gyan-unlock"),
+            ].slice(0, 5),
+        dose: {
+          ...state.dose,
+          running: false,
+          timeLeft: 0,
+          locked: false,
+          completed: true,
+          completed11: is11 ? true : state.dose.completed11,
+          completed12: !is11 ? true : state.dose.completed12,
+        },
+      });
+      return recordDoseDayInState(completedState, todayKey(), questionCount);
+    }
     case "RESET_DOSE": {
       const is11 = state.dose.currentClass === "11";
       return {
@@ -248,6 +404,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           locked: false,
           correct: 0,
           completed: false,
+          running: false,
+          timeLeft: DOSE_DURATION_SEC,
           index11: is11 ? 0 : state.dose.index11,
           locked11: is11 ? false : state.dose.locked11,
           correct11: is11 ? 0 : state.dose.correct11,
@@ -262,6 +420,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
     case "SELECT_DOSE_CLASS": {
+      // Lock class switch during an active timed attempt.
+      if (state.dose.running) return state;
       const targetClass = action.payload;
       const d = state.dose;
       
@@ -289,6 +449,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           locked,
           correct,
           completed,
+          running: false,
+          timeLeft: DOSE_DURATION_SEC,
           index11,
           locked11,
           correct11,
@@ -492,29 +654,75 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return withDerived({ ...state, puzzleCompleted: next });
     }
     case "ENROLL_MONTHLY_CHALLENGE": {
+      // Client-side optimistic path — prefer server /api/challenge/enroll.
       const monthKey = action.payload;
       if (!/^\d{4}-\d{2}$/.test(monthKey)) return state;
-      if (state.challengeEnrolledMonthKey === monthKey) return state;
-      if (state.rdm < MONTHLY_CHALLENGE_TARGET_RDM) return state;
+      if (
+        isEnrolledForChallengeMonth(
+          monthKey,
+          state.challengeEnrolledMonthKey,
+          state.challengeEnrolledMonths,
+        )
+      ) {
+        return state;
+      }
+      const stake = getMonthlyChallengeEntryStakeRdm();
+      if (state.rdm < getMonthlyChallengeTargetRdm()) return state;
+      if (state.rdm < stake) return state;
       const today = todayKey();
       const meta = getChallengeMonthMeta(today);
       if (monthKey !== meta.monthKey) return state;
       if (!isInEntryWindow(today)) return state;
       return withDerived({
         ...state,
-        challengeEnrolledMonthKey: monthKey,
+        rdm: state.rdm - stake,
+        ...withChallengeEnrollment(state, monthKey),
+      });
+    }
+    case "APPLY_CHALLENGE_ENROLLMENT": {
+      const { monthKey, rdm } = action.payload;
+      if (!/^\d{4}-\d{2}$/.test(monthKey)) return state;
+      if (!Number.isFinite(rdm) || rdm < 0) return state;
+      return withDerived({
+        ...state,
+        rdm: Math.floor(rdm),
+        ...withChallengeEnrollment(state, monthKey),
       });
     }
     case "MARK_CHALLENGE_PUZZLE_SUBMITTED": {
       const monthKey = action.payload;
       if (!/^\d{4}-\d{2}$/.test(monthKey)) return state;
+      if (state.challengePuzzleSubmittedMonthKey === monthKey) return state;
       return withDerived({
         ...state,
         challengePuzzleSubmittedMonthKey: monthKey,
       });
     }
-    case "ROLL_DAY":
+    case "PUSH_NOTIFICATION": {
+      const note = action.payload;
+      if (!note.id || !note.text) return state;
+      return {
+        ...state,
+        notifications: [
+          note,
+          ...state.notifications.filter((n) => n.id !== note.id),
+        ].slice(0, 5),
+      };
+    }
+    case "CLEAR_NOTIFICATION": {
+      const id = action.payload;
+      if (!id) return state;
+      if (!state.notifications.some((n) => n.id === id)) return state;
+      return {
+        ...state,
+        notifications: state.notifications.filter((n) => n.id !== id),
+      };
+    }
+    case "ROLL_DAY": {
+      // Avoid no-op re-renders (and save spam) when already on App Clock today.
+      if (state.lastActiveDate === todayKey()) return state;
       return withDerived(rollDayIfNeeded(state));
+    }
     default: {
       const _exhaustive: never = action;
       return _exhaustive;
@@ -541,13 +749,16 @@ interface GameContextValue {
   syncRdm: (rdm: number) => void;
   /** Admin QA: set absolute RDM balance. */
   setRdm: (rdm: number) => void;
-  /** Enroll in this month's Monthly Challenge (days 1–5). */
+  /** Enroll in this month's Monthly Challenge (days 1–5). Deducts entry stake on server. */
   enrollMonthlyChallenge: (monthKey: string) => void;
+  /** Remove a flash notification by id (after toast is shown). */
+  clearNotification: (id: string) => void;
   /** Mark final puzzle submitted for a month key. */
   markChallengePuzzleSubmitted: (monthKey: string) => void;
   toggleHabit: (id: string) => void;
   answerDose: (selected: number, correct: number) => void;
   nextDose: (questionCount?: number) => void;
+  startDose: () => void;
   resetDose: () => void;
   startFunbrain: () => void;
   answerFunbrain: (
@@ -589,6 +800,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const setModal = modalState[1];
 
   const userIdRef = useRef<string | null>(null);
+  const loadedUserIdRef = useRef<string | null>(null);
+  const enrollInFlightRef = useRef(false);
+  const prevFullDayRef = useRef(false);
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const saveQueueRef = useRef(
     createSaveQueue<GameState>(async (next) => {
       const userId = userIdRef.current;
@@ -596,6 +812,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
       return storageAdapter.save(userId, next);
     }),
   );
+
+  const flushProgressNow = useCallback(() => {
+    if (!userIdRef.current) return;
+    void saveQueueRef.current.flushNow(
+      toPersistableGameState(stateRef.current),
+    );
+  }, []);
 
   const goToView = useCallback(
     (view: AppView) => {
@@ -607,49 +830,75 @@ export function GameProvider({ children }: { children: ReactNode }) {
     },
     [router],
   );
+  const goToViewRef = useRef(goToView);
+  goToViewRef.current = goToView;
+
+  // Guest on a private route → home. Kept separate so auth hydrate does not
+  // re-run (and flash a skeleton) on every pathname change.
+  useEffect(() => {
+    if (authLoading || user) return;
+    if (!PUBLIC_VIEWS.has(PATH_TO_VIEW[pathname] ?? "home")) {
+      router.push("/");
+    }
+  }, [authLoading, user, pathname, router]);
 
   useEffect(() => {
     if (authLoading) return;
-    userIdRef.current = user?.id ?? null;
-    saveQueueRef.current.invalidate();
+    const uid = user?.id ?? null;
+    userIdRef.current = uid;
 
-    if (!user) {
+    if (!uid) {
+      loadedUserIdRef.current = null;
+      prevFullDayRef.current = false;
+      saveQueueRef.current.invalidate();
       dispatch({ type: "HYDRATE", payload: createInitialState() });
       setHydrated(true);
       setModal({ pledge: null, reel: null });
-      if (!PUBLIC_VIEWS.has(PATH_TO_VIEW[pathname] ?? "home")) {
-        router.push("/");
-      }
       return;
     }
 
+    // Same signed-in user already loaded — skip reload so a debounce-window
+    // re-render cannot wipe unsaved dose/funbrain/pledge completions.
+    if (loadedUserIdRef.current === uid) return;
+
     let cancelled = false;
     setHydrated(false);
+    saveQueueRef.current.invalidate();
 
     void (async () => {
       const [saved, puzzleProgress] = await Promise.all([
-        storageAdapter.load(user.id),
-        loadPuzzleProgress(user.id),
+        storageAdapter.load(uid),
+        loadPuzzleProgress(uid),
       ]);
       if (cancelled) return;
 
       const today = todayKey();
       const puzzleDoneToday = Boolean(puzzleProgress.attempts[today]);
       const payload = saved ?? createInitialState();
+      const repaired = repairDayCriteriaLogFromSources(
+        payload,
+        puzzleProgress.attempts,
+      );
       const hydratedPayload = {
-        ...payload,
+        ...repaired,
         signedIn: true,
-        joinedDate: payload.joinedDate ?? payload.lastActiveDate ?? today,
-        puzzleCompleted:
-          payload.lastActiveDate === today
-            ? payload.puzzleCompleted || puzzleDoneToday
-            : puzzleDoneToday,
+        joinedDate: repaired.joinedDate ?? repaired.lastActiveDate ?? today,
+        // Keep prior-day puzzleCompleted for rollDayIfNeeded snapshot.
+        // Do NOT swap to "today's puzzle" before the leaving day is snapshotted.
+        puzzleCompleted: repaired.puzzleCompleted,
       };
+      // Baseline = what Supabase already has. Post-HYDRATE roll snapshots
+      // must flush so leaving-day completions are not lost on restart.
       saveQueueRef.current.setBaseline(toPersistableGameState(hydratedPayload));
       dispatch({
         type: "HYDRATE",
         payload: hydratedPayload,
       });
+      // After roll, apply today's puzzle from the puzzle store.
+      if (puzzleDoneToday) {
+        dispatch({ type: "SET_PUZZLE_COMPLETED", payload: true });
+      }
+      loadedUserIdRef.current = uid;
       setHydrated(true);
 
       const validViews: AppView[] = [
@@ -669,30 +918,82 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const pending = readPendingView() as AppView | null;
       if (pending && validViews.includes(pending)) {
         clearPendingView();
-        goToView(pending);
+        goToViewRef.current(pending);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [user, authLoading, goToView, pathname, router, setModal]);
+  }, [user?.id, authLoading, setModal]);
 
   useEffect(() => {
     if (!hydrated || authLoading || !user) return;
     saveQueueRef.current.enqueue(toPersistableGameState(state));
   }, [state, hydrated, user, authLoading]);
 
+  // Persist immediately after hydrate/roll so dayCriteriaLog snapshots hit Supabase.
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    const id = window.setTimeout(() => flushProgressNow(), 0);
+    return () => window.clearTimeout(id);
+  }, [hydrated, user, flushProgressNow]);
+
+  // Flush pending progress when tab hides so completions land in Supabase.
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    const flush = () => flushProgressNow();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", flush);
+    };
+  }, [hydrated, user, flushProgressNow]);
+
+  // App Clock change: roll first, then flush so leaving-day completions stick.
   useEffect(() => {
     if (!hydrated) return;
     dispatch({ type: "ROLL_DAY" });
-  }, [clockToday, hydrated]);
+    if (!user) return;
+    const id = window.setTimeout(() => flushProgressNow(), 0);
+    return () => window.clearTimeout(id);
+  }, [clockToday, hydrated, user, flushProgressNow]);
+
+  // The moment a full day locks in, write to Supabase (don't wait for debounce).
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    const today = todayKey();
+    const criteria =
+      state.dayCriteriaLog?.[today] ?? todayCriteria(state);
+    const full = isFullDay(criteria);
+    if (full && !prevFullDayRef.current) {
+      flushProgressNow();
+    }
+    prevFullDayRef.current = full;
+  }, [state, hydrated, user, flushProgressNow]);
 
   useEffect(() => {
     if (!state.funbrain.running) return;
     const id = window.setInterval(() => dispatch({ type: "TICK_FUNBRAIN" }), 1000);
     return () => window.clearInterval(id);
   }, [state.funbrain.running]);
+
+  useEffect(() => {
+    if (!state.dose.running) return;
+    const id = window.setInterval(
+      () =>
+        dispatch({
+          type: "TICK_DOSE",
+          payload: { questionCount: DOSE_QUESTION_COUNT },
+        }),
+      1000,
+    );
+    return () => window.clearInterval(id);
+  }, [state.dose.running]);
 
   const setActiveView = useCallback(
     (view: AppView) => {
@@ -722,6 +1023,23 @@ export function GameProvider({ children }: { children: ReactNode }) {
       dispatch({ type: "TICK_GYAN", payload: ms });
     },
     [user],
+  );
+
+  const clearNotification = useCallback((id: string) => {
+    if (!id) return;
+    dispatch({ type: "CLEAR_NOTIFICATION", payload: id });
+  }, []);
+
+  const markChallengePuzzleSubmitted = useCallback(
+    (monthKey: string) => {
+      requireAuth(() =>
+        dispatch({
+          type: "MARK_CHALLENGE_PUZZLE_SUBMITTED",
+          payload: monthKey,
+        }),
+      );
+    },
+    [requireAuth],
   );
 
   const levelInfo = useMemo(() => getLevelInfo(state.rdm), [state.rdm]);
@@ -761,6 +1079,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         }
       });
     },
+    startDose: () => requireAuth(() => dispatch({ type: "START_DOSE" })),
     resetDose: () => requireAuth(() => dispatch({ type: "RESET_DOSE" })),
     startFunbrain: () => requireAuth(() => dispatch({ type: "START_FUNBRAIN" })),
     answerFunbrain: (selected, correct, poolLength) =>
@@ -777,17 +1096,110 @@ export function GameProvider({ children }: { children: ReactNode }) {
       requireAuth(() => dispatch({ type: "SYNC_RDM", payload: rdm })),
     setRdm: (rdm) =>
       requireAuth(() => dispatch({ type: "SET_RDM", payload: rdm })),
-    enrollMonthlyChallenge: (monthKey) =>
-      requireAuth(() =>
-        dispatch({ type: "ENROLL_MONTHLY_CHALLENGE", payload: monthKey }),
-      ),
-    markChallengePuzzleSubmitted: (monthKey) =>
-      requireAuth(() =>
-        dispatch({
-          type: "MARK_CHALLENGE_PUZZLE_SUBMITTED",
-          payload: monthKey,
-        }),
-      ),
+    enrollMonthlyChallenge: (monthKey) => {
+      requireAuth(() => {
+        if (!/^\d{4}-\d{2}$/.test(monthKey)) return;
+        if (enrollInFlightRef.current) return;
+        if (
+          isEnrolledForChallengeMonth(
+            monthKey,
+            stateRef.current.challengeEnrolledMonthKey,
+            stateRef.current.challengeEnrolledMonths,
+          )
+        ) {
+          return;
+        }
+        enrollInFlightRef.current = true;
+        const dateKey = clockToday;
+        void (async () => {
+          try {
+            // Persist local completions before enroll can re-hydrate from server.
+            await saveQueueRef.current.flushNow(
+              toPersistableGameState(stateRef.current),
+            );
+            const res = await fetch("/api/challenge/enroll", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ monthKey, dateKey }),
+            });
+            const data = (await res.json()) as {
+              error?: string;
+              message?: string;
+              rdm?: number;
+              challengeEnrolledMonthKey?: string;
+              state?: GameState;
+            };
+            if (!res.ok) {
+              console.warn("[enroll]", data.error ?? res.status);
+              try {
+                const syncRes = await fetch("/api/progress/game", {
+                  credentials: "include",
+                });
+                if (syncRes.ok) {
+                  const syncData = (await syncRes.json()) as {
+                    state?: GameState | null;
+                  };
+                  if (syncData.state) {
+                    dispatch({ type: "HYDRATE", payload: syncData.state });
+                  }
+                }
+              } catch {
+                /* ignore */
+              }
+              dispatch({
+                type: "PUSH_NOTIFICATION",
+                payload: {
+                  id: "challenge-enroll",
+                  icon: "⚠️",
+                  text:
+                    data.error ??
+                    "Could not enter Monthly Challenge. Please try again.",
+                },
+              });
+              return;
+            }
+            if (data.state) {
+              dispatch({ type: "HYDRATE", payload: data.state });
+            } else if (
+              typeof data.rdm === "number" &&
+              typeof data.challengeEnrolledMonthKey === "string"
+            ) {
+              dispatch({
+                type: "APPLY_CHALLENGE_ENROLLMENT",
+                payload: {
+                  monthKey: data.challengeEnrolledMonthKey,
+                  rdm: data.rdm,
+                },
+              });
+            }
+            dispatch({
+              type: "PUSH_NOTIFICATION",
+              payload: {
+                id: "challenge-enroll",
+                icon: "🏆",
+                text:
+                  data.message ??
+                  "Thank you! You're in this month's challenge. Good luck!",
+              },
+            });
+          } catch (err) {
+            console.warn("[enroll] network", err);
+            dispatch({
+              type: "PUSH_NOTIFICATION",
+              payload: {
+                id: "challenge-enroll",
+                icon: "⚠️",
+                text: "Network error — could not enter the challenge.",
+              },
+            });
+          } finally {
+            enrollInFlightRef.current = false;
+          }
+        })();
+      });
+    },
+    markChallengePuzzleSubmitted,
     tickGyan,
     toggleGyan: (id) =>
       requireAuth(() => dispatch({ type: "TOGGLE_GYAN", payload: id })),
@@ -811,6 +1223,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       });
     },
     closeReel: () => setModal((m) => ({ ...m, reel: null })),
+    clearNotification,
     markPuzzleCompleted: () => {
       if (!user) return;
       dispatch({ type: "SET_PUZZLE_COMPLETED", payload: true });

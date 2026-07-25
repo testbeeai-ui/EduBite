@@ -10,7 +10,9 @@ import {
 import type { ContentDomain, DoseClassLevel } from "@/lib/content/types";
 import {
   dailyDoseScheduleDateFor,
+  ensureFunBrainQuestionCount,
   funBrainScheduleDateFor,
+  FUNBRAIN_QUESTIONS_PER_DAY,
   stripFunBrainBankLabel,
 } from "@/lib/content/schedule";
 import type { Question } from "@/lib/types";
@@ -37,7 +39,7 @@ function staticForFunBrain(): Question[] {
     ...q,
     tag: "",
     q: stripFunBrainBankLabel(q.q),
-  }));
+  })).slice(0, FUNBRAIN_QUESTIONS_PER_DAY);
 }
 
 export async function resolveDailyDoseForClass(
@@ -79,12 +81,17 @@ export async function resolveQuestionsForDate(
   const scheduleDate = funBrainScheduleDateFor(dateKey);
   const rows = await getPublishedQuestionsForDate("funbrain", scheduleDate);
   if (rows.length > 0) {
+    const fromDb = contentRowsToQuestions(rows);
     return {
       domain,
       dateKey,
       scheduleDate,
       source: "db",
-      questions: contentRowsToQuestions(rows),
+      questions: ensureFunBrainQuestionCount(
+        fromDb,
+        staticForFunBrain(),
+        FUNBRAIN_QUESTIONS_PER_DAY,
+      ),
     };
   }
   return {

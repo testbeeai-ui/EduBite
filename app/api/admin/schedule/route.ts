@@ -30,6 +30,7 @@ import {
 } from "@/lib/puzzles/daily";
 import { addDaysToKey, todayKey } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
@@ -97,7 +98,7 @@ export async function GET(request: Request) {
     const phenomenon = phenomenonForDate(dateKey);
     const roleModel = roleModelForDate(dateKey);
 
-    const reelDayNumber = getPledgeReelDayNumber(joinedDate, catalog);
+    const reelDayNumber = getPledgeReelDayNumber(joinedDate, catalog, dateKey);
     const daysSinceJoin = Math.max(
       0,
       Math.round(

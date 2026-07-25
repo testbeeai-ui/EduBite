@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getRequestUser } from "@/lib/auth/server";
 import { createEdubiteSupabaseServer } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /** Public content tables — readable with anon key (no session). */

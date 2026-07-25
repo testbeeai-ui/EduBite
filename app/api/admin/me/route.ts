@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAdminEmail, normalizeAdminEmail } from "@/lib/admin/allowlist";
 import { getRequestUser } from "@/lib/auth/server";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
@@ -22,6 +23,7 @@ export async function GET() {
           allowed: false,
           userId: user.id,
           error: "Forbidden — not on admin allowlist",
+          allowlistHint: "Built-in admins include mailidpwd@gmail.com",
         },
         { status: 403 },
       );

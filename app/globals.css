@@ -6,6 +6,7 @@
   --color-surface-2: #1d2230;
   --color-line: #272e3e;
   --color-text: #f6f7fb;
+  --color-text-muted: #c8d0e0;
   --color-text-dim: #8d96ac;
   --color-teal: #2dd4bf;
   --color-amber: #fbbf24;
@@ -25,6 +26,7 @@
   --surface-2: #1d2230;
   --line: #272e3e;
   --text: #f6f7fb;
+  --text-muted: #c8d0e0;
   --text-dim: #8d96ac;
   --teal: #2dd4bf;
   --amber: #fbbf24;
@@ -49,7 +51,10 @@ body {
   position: relative;
 }
 
-/* Soft top glow only — keeps the student-facing mood without a colored empty footer */
+/* Soft top glow — behind app content. Do NOT style `body > *` with
+   position/z-index: Context providers render fragments, so header/main/modals
+   are direct body children; that rule was overriding Tailwind `fixed`/`sticky`
+   and made pledge modals open below the fold instead of as overlays. */
 body::before {
   content: "";
   position: fixed;
@@ -64,9 +69,10 @@ body::before {
     radial-gradient(50% 45% at 92% 0%, rgba(45, 212, 191, 0.1), transparent 65%);
 }
 
-body > * {
+#edubite-root {
   position: relative;
   z-index: 1;
+  min-height: 100vh;
 }
 
 ::-webkit-scrollbar {

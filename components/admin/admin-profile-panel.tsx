@@ -8,7 +8,7 @@ import { useAppClock } from "@/lib/clock/app-clock";
 import {
   getChallengeMonthMeta,
   getEntryState,
-  MONTHLY_CHALLENGE_TARGET_RDM,
+  getMonthlyChallengeTargetRdm,
   nextCalendarDay,
 } from "@/lib/challenge/monthly";
 import { useGame } from "@/lib/store/game-provider";
@@ -28,11 +28,13 @@ export function AdminProfilePanel() {
   const [draft, setDraft] = useState(todayKey);
   const [rdmDraft, setRdmDraft] = useState(String(state.rdm));
   const [toast, setToast] = useState<string | null>(null);
+  const MONTHLY_CHALLENGE_TARGET_RDM = getMonthlyChallengeTargetRdm();
   const meta = useMemo(() => getChallengeMonthMeta(todayKey), [todayKey]);
   const entryState = getEntryState({
     rdm: state.rdm,
     dateKey: todayKey,
     enrolledMonthKey: state.challengeEnrolledMonthKey,
+    enrolledMonths: state.challengeEnrolledMonths,
   });
   const deviceToday = realTodayKey();
 

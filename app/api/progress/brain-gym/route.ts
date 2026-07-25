@@ -17,6 +17,7 @@ import type {
   GameId,
 } from "@/lib/brain-gym/types";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const GAME_IDS = new Set<GameId>(GAMES.map((game) => game.id));

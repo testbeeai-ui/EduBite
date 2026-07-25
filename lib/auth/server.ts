@@ -18,8 +18,15 @@ export async function getRequestUser(): Promise<User | null> {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll() {
-          // Never write cookies from progress routes
+        setAll(cookiesToSet) {
+          // Route Handlers may refresh the session; ignore if cookies are read-only.
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options);
+            });
+          } catch {
+            /* ignore */
+          }
         },
       },
       auth: {

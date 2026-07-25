@@ -1,4 +1,5 @@
 import { DOSE_QUESTION_COUNT } from "@/data/config";
+import type { Question } from "@/lib/types";
 import { addDaysToKey } from "@/lib/utils";
 
 /** First calendar day of the shared 180-day content cycle. */
@@ -76,4 +77,26 @@ export function funBrainScheduleDateFor(dateKey: string): string {
 
 export function doseQuestionsPerDay(): number {
   return DOSE_QUESTION_COUNT;
+}
+
+/**
+ * FunBrain must always be 6 Q/day. Some imported pack days (Final Sprint)
+ * only had 4 in the bank — pad from the static pool without duplicates.
+ */
+export function ensureFunBrainQuestionCount(
+  questions: Question[],
+  fillFrom: Question[],
+  target: number = FUNBRAIN_QUESTIONS_PER_DAY,
+): Question[] {
+  const out = questions.slice(0, target);
+  if (out.length >= target) return out;
+  const seen = new Set(out.map((q) => q.q.trim().toLowerCase()));
+  for (const candidate of fillFrom) {
+    if (out.length >= target) break;
+    const key = candidate.q.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(candidate);
+  }
+  return out;
 }

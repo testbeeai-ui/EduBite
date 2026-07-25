@@ -15,10 +15,11 @@ import {
 import { FEATURES } from "@/data/config";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/auth-provider";
+import { useAppClock } from "@/lib/clock/app-clock";
 import { useGame } from "@/lib/store/game-provider";
 import {
   formatCountdown,
-  msUntilTomorrow,
+  msUntilDateEnd,
   puzzleForDate,
   yesterdayPuzzle,
   yesterdayKey,
@@ -29,10 +30,11 @@ import {
   recordAttempt,
   savePuzzleAttempt,
 } from "@/lib/puzzles/storage";
-import { formatShortDate, todayKey } from "@/lib/utils";
+import { formatShortDate } from "@/lib/utils";
 
 export function PuzzlesView() {
   const { user } = useAuth();
+  const { todayKey: clockToday } = useAppClock();
   const { withAuth, markPuzzleCompleted } = useGame();
   const [progress, setProgress] = useState<PuzzleProgress | null>(null);
   const [note, setNote] = useState("");
@@ -40,12 +42,12 @@ export function PuzzlesView() {
     null,
   );
   const [showHint, setShowHint] = useState(false);
-  const [countdown, setCountdown] = useState(msUntilTomorrow());
+  const [countdown, setCountdown] = useState(0);
   const [justSaved, setJustSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const today = todayKey();
+  const today = clockToday;
   const yKey = yesterdayKey(today);
   const puzzle = useMemo(() => puzzleForDate(today), [today]);
   const yPuzzle = useMemo(() => yesterdayPuzzle(today), [today]);
@@ -71,9 +73,11 @@ export function PuzzlesView() {
   }, [user?.id, today, puzzle.id]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setCountdown(msUntilTomorrow()), 1000);
+    const tick = () => setCountdown(msUntilDateEnd(today));
+    tick();
+    const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [today]);
 
   const attempt = progress?.attempts[today];
   const hasAttempt = Boolean(attempt && attempt.puzzleId === puzzle.id);
@@ -115,7 +119,7 @@ export function PuzzlesView() {
           return;
         }
         setProgress(progress);
-        setSaveError("Could not save yet. Please try again.");
+        setSaveError(result.error || "Could not save yet. Please try again.");
       });
     });
   }, [

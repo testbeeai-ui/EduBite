@@ -3,19 +3,21 @@ import { GYAN_CARDS } from "@/data/gyan";
 import { HABIT_DEFINITIONS } from "@/data/habits";
 import {
   DOSE_QUESTION_COUNT,
-  FUNBRAIN_COMBO_BONUS,
+  DOSE_DURATION_SEC,
   FUNBRAIN_DURATION_SEC,
   GYAN_STREAK_GOAL_MS,
   LEVELS,
   RDM_PER_DOSE_CORRECT,
 } from "@/data/config";
 import { DAILY_DOSE_QUESTIONS } from "@/data/questions";
+import { getLiveRdmAmount } from "@/lib/rdm/live-amounts";
 import type {
   AchievementProgress,
   DayCriteria,
   GameState,
   JourneyDay,
 } from "@/lib/types";
+import { ensureQaJourneyJoin } from "@/lib/clock/override-store";
 import { addDaysToKey, daysBetween, todayKey } from "@/lib/utils";
 
 export function createInitialState(): GameState {
@@ -33,6 +35,8 @@ export function createInitialState(): GameState {
       locked: false,
       correct: 0,
       completed: false,
+      running: false,
+      timeLeft: DOSE_DURATION_SEC,
       index11: 0,
       locked11: false,
       correct11: 0,
@@ -71,7 +75,9 @@ export function createInitialState(): GameState {
     funbrainRdmCredited: 0,
     puzzleCompleted: false,
     doseDayLog: {},
+    dayCriteriaLog: {},
     challengeEnrolledMonthKey: null,
+    challengeEnrolledMonths: [],
     challengePuzzleSubmittedMonthKey: null,
   };
 }
@@ -100,12 +106,16 @@ export function getLevelInfo(rdm: number) {
 }
 
 export function todayCriteria(state: GameState): DayCriteria {
+  const habitsDone = state.habits.filter((h) => h.done).map((h) => h.id);
   return {
     dose: state.dose.completed,
     funbrain: state.funbrain.completed,
     puzzles: state.puzzleCompleted,
-    habits: state.habits.every((h) => h.done),
+    habits: state.habits.length > 0 && state.habits.every((h) => h.done),
     pledges: state.pledgeAM && state.pledgePM,
+    pledgeAM: state.pledgeAM,
+    pledgePM: state.pledgePM,
+    habitsDone,
   };
 }
 
@@ -119,6 +129,33 @@ export function isFullDay(criteria: DayCriteria): boolean {
   );
 }
 
+/** Merge pillar flags and stamp completedAt the first time the day is full. */
+export function mergeDayCriteriaRecord(
+  prev: DayCriteria | undefined,
+  live: DayCriteria,
+  nowIso: string = new Date().toISOString(),
+): DayCriteria {
+  const habitsDoneCombined = Array.from(
+    new Set([...(prev?.habitsDone || []), ...(live.habitsDone || [])]),
+  );
+
+  const merged: DayCriteria = {
+    dose: Boolean(live.dose || prev?.dose),
+    funbrain: Boolean(live.funbrain || prev?.funbrain),
+    puzzles: Boolean(live.puzzles || prev?.puzzles),
+    habits: Boolean(live.habits || prev?.habits),
+    pledges: Boolean(live.pledges || prev?.pledges),
+    completedAt: prev?.completedAt ?? null,
+    pledgeAM: Boolean(live.pledgeAM || prev?.pledgeAM),
+    pledgePM: Boolean(live.pledgePM || prev?.pledgePM),
+    habitsDone: habitsDoneCombined,
+  };
+  if (isFullDay(merged) && !merged.completedAt) {
+    merged.completedAt = nowIso;
+  }
+  return merged;
+}
+
 function emptyDayCriteria(): DayCriteria {
   return {
     dose: false,
@@ -126,7 +163,59 @@ function emptyDayCriteria(): DayCriteria {
     puzzles: false,
     habits: false,
     pledges: false,
+    completedAt: null,
+    pledgeAM: false,
+    pledgePM: false,
+    habitsDone: [],
   };
+}
+
+/**
+ * Rebuild missing dayCriteriaLog flags from durable side sources
+ * (doseDayLog + puzzle attempts) so Date-traveler / hydrate races
+ * cannot leave "completed work" invisible on the streak meter.
+ */
+export function repairDayCriteriaLogFromSources(
+  state: GameState,
+  puzzleAttempts: Record<string, unknown> = {},
+): GameState {
+  const keys = new Set([
+    ...Object.keys(state.dayCriteriaLog ?? {}),
+    ...Object.keys(state.doseDayLog ?? {}),
+    ...Object.keys(puzzleAttempts ?? {}),
+  ]);
+  if (keys.size === 0) return state;
+
+  const dayCriteriaLog: GameState["dayCriteriaLog"] = {
+    ...(state.dayCriteriaLog ?? {}),
+  };
+  let changed = false;
+
+  for (const dateKey of keys) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) continue;
+    const prev = dayCriteriaLog[dateKey];
+    const doseDone = Boolean(state.doseDayLog?.[dateKey]?.completed);
+    const puzzleDone = Boolean(puzzleAttempts?.[dateKey]);
+    if (!doseDone && !puzzleDone) continue;
+
+    const patched = mergeDayCriteriaRecord(prev, {
+      ...emptyDayCriteria(),
+      dose: doseDone,
+      puzzles: puzzleDone,
+    });
+    const same =
+      prev &&
+      prev.dose === patched.dose &&
+      prev.puzzles === patched.puzzles &&
+      prev.funbrain === patched.funbrain &&
+      prev.habits === patched.habits &&
+      prev.pledges === patched.pledges;
+    if (same) continue;
+    dayCriteriaLog[dateKey] = patched;
+    changed = true;
+  }
+
+  return changed ? { ...state, dayCriteriaLog } : state;
 }
 
 export function criteriaCount(day: DayCriteria): number {
@@ -139,14 +228,58 @@ export function criteriaCount(day: DayCriteria): number {
   ].filter(Boolean).length;
 }
 
-function criteriaForDate(state: GameState, dateKey: string): DayCriteria {
-  const today = todayKey();
-  const joinDate = state.joinedDate ?? today;
-  const offset = daysBetween(joinDate, dateKey);
+/**
+ * Journey Day 1 is normally `joinedDate`.
+ * When App Clock is set BEFORE join (admin QA), use a stable QA join date
+ * (earliest simulated day) so advancing the clock does not re-anchor Day 1.
+ */
+export function effectiveJourneyJoinDate(
+  state: Pick<GameState, "joinedDate">,
+  asOfDateKey: string = todayKey(),
+): string {
+  const stored = state.joinedDate ?? asOfDateKey;
+  if (asOfDateKey >= stored) return stored;
+  const qaJoin = ensureQaJourneyJoin(asOfDateKey, stored);
+  return qaJoin ?? asOfDateKey;
+}
 
-  if (offset < 0) return emptyDayCriteria();
+/** Criteria for a calendar date — today live, past from date log / history. */
+export function criteriaForDate(
+  state: GameState,
+  dateKey: string,
+  asOfDateKey: string = todayKey(),
+): DayCriteria {
+  const today = asOfDateKey;
+  // Live task flags only apply to the day the learner is actually on.
+  // Admin month clamp (e.g. viewing July while App Clock is Aug 2) must not
+  // paint month-end as "done" from a later day's live completions.
+  if (dateKey === today) {
+    const logged = state.dayCriteriaLog?.[dateKey];
+    if (state.lastActiveDate === dateKey) {
+      const live = todayCriteria(state);
+      if (!logged) return live;
+      return mergeDayCriteriaRecord(logged, live);
+    }
+    if (logged) return logged;
+    return emptyDayCriteria();
+  }
+
+  // Durable logs always win. QA journey join / clock position must not hide
+  // days that were already completed while Date traveler was elsewhere.
+  const fromLog = state.dayCriteriaLog?.[dateKey];
+  const doseDone = Boolean(state.doseDayLog?.[dateKey]?.completed);
+  if (fromLog || doseDone) {
+    return mergeDayCriteriaRecord(fromLog, {
+      ...emptyDayCriteria(),
+      dose: doseDone,
+    });
+  }
+
   if (dateKey > today) return emptyDayCriteria();
-  if (dateKey === today) return todayCriteria(state);
+
+  const joinDate = effectiveJourneyJoinDate(state, asOfDateKey);
+  const offset = daysBetween(joinDate, dateKey);
+  if (offset < 0) return emptyDayCriteria();
 
   const daysBeforeToday = daysBetween(dateKey, today);
   const historyIndex = state.history.length - daysBeforeToday;
@@ -156,9 +289,13 @@ function criteriaForDate(state: GameState, dateKey: string): DayCriteria {
   return emptyDayCriteria();
 }
 
-function journeyDay(state: GameState, dayOffset: number): JourneyDay {
-  const joinDate = state.joinedDate ?? todayKey();
-  const today = todayKey();
+function journeyDay(
+  state: GameState,
+  dayOffset: number,
+  asOfDateKey: string = todayKey(),
+): JourneyDay {
+  const joinDate = effectiveJourneyJoinDate(state, asOfDateKey);
+  const today = asOfDateKey;
   const dateKey = addDaysToKey(joinDate, dayOffset);
   const dayNumber = dayOffset + 1;
 
@@ -172,27 +309,43 @@ function journeyDay(state: GameState, dayOffset: number): JourneyDay {
     dateKey,
     dayNumber,
     status,
-    criteria: status === "upcoming" ? emptyDayCriteria() : criteriaForDate(state, dateKey),
+    criteria:
+      status === "upcoming"
+        ? emptyDayCriteria()
+        : criteriaForDate(state, dateKey, asOfDateKey),
   };
 }
 
 /** 28-day journey grid: Day 1 (join) → upcoming days at the end. */
-export function buildJourneyHeatmap(state: GameState, totalDays = 28): JourneyDay[] {
-  return Array.from({ length: totalDays }, (_, i) => journeyDay(state, i));
+export function buildJourneyHeatmap(
+  state: GameState,
+  totalDays = 28,
+  asOfDateKey: string = todayKey(),
+): JourneyDay[] {
+  return Array.from({ length: totalDays }, (_, i) =>
+    journeyDay(state, i, asOfDateKey),
+  );
 }
 
 /** Up to 7 days: from join when new, otherwise the current week ending today. */
-export function buildJourneyWeek(state: GameState): JourneyDay[] {
-  const joinDate = state.joinedDate ?? todayKey();
-  const today = todayKey();
+export function buildJourneyWeek(
+  state: GameState,
+  asOfDateKey: string = todayKey(),
+): JourneyDay[] {
+  const joinDate = effectiveJourneyJoinDate(state, asOfDateKey);
+  const today = asOfDateKey;
   const daysSinceJoin = daysBetween(joinDate, today);
 
   if (daysSinceJoin < 6) {
-    return Array.from({ length: 7 }, (_, i) => journeyDay(state, i));
+    return Array.from({ length: 7 }, (_, i) =>
+      journeyDay(state, i, asOfDateKey),
+    );
   }
 
   const weekStartOffset = daysSinceJoin - 6;
-  return Array.from({ length: 7 }, (_, i) => journeyDay(state, weekStartOffset + i));
+  return Array.from({ length: 7 }, (_, i) =>
+    journeyDay(state, weekStartOffset + i, asOfDateKey),
+  );
 }
 
 export function countFullJourneyDays(days: JourneyDay[]): number {
@@ -211,11 +364,16 @@ export function buildHeatmapHistory(state: GameState): DayCriteria[] {
   return buildJourneyHeatmap(state).map((d) => d.criteria);
 }
 
-export function computeStreak(state: GameState): number {
-  const allDays = [...state.history, todayCriteria(state)];
+export function computeStreak(
+  state: GameState,
+  asOfDateKey: string = todayKey(),
+): number {
+  // Rebuild from journey so admin clock override is respected.
+  const heat = buildJourneyHeatmap(state, 28, asOfDateKey);
+  const pastAndToday = heat.filter((d) => d.status !== "upcoming");
   let streak = 0;
-  for (let i = allDays.length - 1; i >= 0; i--) {
-    if (isFullDay(allDays[i])) streak++;
+  for (let i = pastAndToday.length - 1; i >= 0; i--) {
+    if (isFullDay(pastAndToday[i]!.criteria)) streak++;
     else break;
   }
   return streak;
@@ -308,11 +466,13 @@ export function getGyanCards(state: GameState) {
 }
 
 export function funbrainPoints(combo: number): number {
-  return 10 + combo * FUNBRAIN_COMBO_BONUS;
+  const base = getLiveRdmAmount("funbrain.base_points");
+  const bonus = getLiveRdmAmount("funbrain.combo_bonus");
+  return base + combo * bonus;
 }
 
 export function getDoseQuestion(index: number) {
   return DAILY_DOSE_QUESTIONS[index];
 }
 
-export { RDM_PER_DOSE_CORRECT, GYAN_STREAK_GOAL_MS, FUNBRAIN_DURATION_SEC };
+export { RDM_PER_DOSE_CORRECT, GYAN_STREAK_GOAL_MS, FUNBRAIN_DURATION_SEC, DOSE_DURATION_SEC };

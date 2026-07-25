@@ -28,7 +28,8 @@
     "seed:role-models": "node scripts/seed-edubite-role-models.mjs",
     "import:role-models": "python scripts/import-inspiration-role-models.py",
     "import:pcm-daily-dose": "node scripts/import-cbse-pcm-daily-dose.mjs",
-    "import:funbrain": "node scripts/import-funbrain.mjs"
+    "import:funbrain": "node scripts/import-funbrain.mjs",
+    "import:funbrain-100": "node scripts/import-funbrain-100.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

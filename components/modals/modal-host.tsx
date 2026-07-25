@@ -5,9 +5,10 @@ import { PLEDGE_AM, PLEDGE_PM } from "@/data/pledges";
 import { REEL_DURATION_SEC } from "@/data/config";
 import { Button } from "@/components/ui/button";
 import { ModalCard, ModalOverlay } from "@/components/ui/modal";
+import { effectiveJourneyJoinDate } from "@/lib/gamification";
 import { useGame } from "@/lib/store/game-provider";
 import type { PledgeType } from "@/lib/types";
-import { formatTime } from "@/lib/utils";
+import { formatTime, todayKey } from "@/lib/utils";
 
 type PledgeReelSlide = {
   icon: string;
@@ -24,8 +25,12 @@ type PledgeReelDay = {
 
 const pledgeReelCache = new Map<string, PledgeReelDay>();
 
-function pledgeCacheKey(joinedDate: string, slot: "am" | "pm"): string {
-  return `${joinedDate}:${slot}`;
+function pledgeCacheKey(
+  journeyJoin: string,
+  asOfDateKey: string,
+  slot: "am" | "pm",
+): string {
+  return `${journeyJoin}:${asOfDateKey}:${slot}`;
 }
 
 function renderPledgeHeadline(
@@ -164,6 +169,8 @@ function IntegrityReelModal({
   onSignWithoutReel: () => void;
 }) {
   const { state } = useGame();
+  const asOfDateKey = todayKey();
+  const journeyJoin = effectiveJourneyJoinDate(state, asOfDateKey);
   const slot = type === "am" ? "am" : "pm";
   const [elapsed, setElapsed] = useState(0);
   const [reelDay, setReelDay] = useState<PledgeReelDay | null>(null);
@@ -183,7 +190,7 @@ function IntegrityReelModal({
     setLoadFailed(false);
     let cancelled = false;
 
-    const cacheKey = pledgeCacheKey(state.joinedDate, slot);
+    const cacheKey = pledgeCacheKey(journeyJoin, asOfDateKey, slot);
     const cached = pledgeReelCache.get(cacheKey);
     if (cached?.slides?.length === 4) {
       setReelDay(cached);
@@ -192,10 +199,14 @@ function IntegrityReelModal({
 
     void (async () => {
       try {
-        const res = await fetch(
-          `/api/content/pledge-reel?joinedDate=${encodeURIComponent(state.joinedDate)}&slot=${slot}`,
-          { credentials: "include" },
-        );
+        const params = new URLSearchParams({
+          joinedDate: journeyJoin,
+          dateKey: asOfDateKey,
+          slot,
+        });
+        const res = await fetch(`/api/content/pledge-reel?${params}`, {
+          credentials: "include",
+        });
         if (!res.ok) throw new Error("Pledge reel request failed");
         const data = (await res.json()) as { reel?: PledgeReelDay };
         if (!cancelled && data.reel?.slides?.length === 4) {
@@ -212,7 +223,7 @@ function IntegrityReelModal({
     return () => {
       cancelled = true;
     };
-  }, [open, type, state.joinedDate, slot]);
+  }, [open, type, journeyJoin, asOfDateKey, slot]);
 
   useEffect(() => {
     if (!open || !reelDay) return;

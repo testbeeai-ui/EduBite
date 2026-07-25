@@ -1,32 +1,60 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppHeader } from "@/components/layout/app-header";
+import { FlashToast } from "@/components/layout/flash-toast";
 import { ModalHost } from "@/components/modals/modal-host";
-import { AchievementsView } from "@/components/views/achievements-view";
-import { AIView } from "@/components/views/ai-view";
-import { DailyDoseView } from "@/components/views/dailydose-view";
-import { FunBrainView } from "@/components/views/funbrain-view";
-import { HabitsView } from "@/components/views/habits-view";
 import { HomeView } from "@/components/views/home-view";
-import { InspirationView } from "@/components/views/inspiration-view";
-import { MonthlyChallengeView } from "@/components/views/monthly-challenge-view";
-import { PuzzlesView } from "@/components/views/puzzles-view";
-import { WASquadView } from "@/components/views/wasquad-view";
-import { ProfileView } from "@/components/views/profile-view";
 import { PageSkeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { useGame } from "@/lib/store/game-provider";
 import type { AppView } from "@/lib/types";
 
+const DailyDoseView = dynamic(
+  () => import("@/components/views/dailydose-view").then((mod) => mod.DailyDoseView),
+  { loading: () => <PageSkeleton /> }
+);
+const FunBrainView = dynamic(
+  () => import("@/components/views/funbrain-view").then((mod) => mod.FunBrainView),
+  { loading: () => <PageSkeleton /> }
+);
 const GyanView = dynamic(
   () => import("@/components/views/gyan-view").then((mod) => mod.GyanView),
-  {
-    ssr: false,
-    loading: () => <PageSkeleton />,
-  },
+  { ssr: false, loading: () => <PageSkeleton /> }
+);
+const PuzzlesView = dynamic(
+  () => import("@/components/views/puzzles-view").then((mod) => mod.PuzzlesView),
+  { loading: () => <PageSkeleton /> }
+);
+const WASquadView = dynamic(
+  () => import("@/components/views/wasquad-view").then((mod) => mod.WASquadView),
+  { loading: () => <PageSkeleton /> }
+);
+const HabitsView = dynamic(
+  () => import("@/components/views/habits-view").then((mod) => mod.HabitsView),
+  { loading: () => <PageSkeleton /> }
+);
+const AchievementsView = dynamic(
+  () => import("@/components/views/achievements-view").then((mod) => mod.AchievementsView),
+  { loading: () => <PageSkeleton /> }
+);
+const InspirationView = dynamic(
+  () => import("@/components/views/inspiration-view").then((mod) => mod.InspirationView),
+  { loading: () => <PageSkeleton /> }
+);
+const AIView = dynamic(
+  () => import("@/components/views/ai-view").then((mod) => mod.AIView),
+  { loading: () => <PageSkeleton /> }
+);
+const MonthlyChallengeView = dynamic(
+  () => import("@/components/views/monthly-challenge-view").then((mod) => mod.MonthlyChallengeView),
+  { loading: () => <PageSkeleton /> }
+);
+const ProfileView = dynamic(
+  () => import("@/components/views/profile-view").then((mod) => mod.ProfileView),
+  { loading: () => <PageSkeleton /> }
 );
 
 const VIEW_MAP: Record<AppView, React.ComponentType> = {
@@ -48,7 +76,7 @@ const PUBLIC_VIEWS = new Set<AppView>(["home"]);
 
 export function AppShell() {
   const [mounted, setMounted] = useState(false);
-  const { activeView, hydrated, setActiveView } = useGame();
+  const { activeView, hydrated, setActiveView, clearNotification } = useGame();
   const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
@@ -67,6 +95,16 @@ export function AppShell() {
       ? "home"
       : activeView;
   const ViewComponent = VIEW_MAP[safeView];
+
+  // Don't leave enroll toast sticky when browsing other pages.
+  const prevViewRef = useRef(safeView);
+  useEffect(() => {
+    const prev = prevViewRef.current;
+    prevViewRef.current = safeView;
+    if (prev === "challenge" && safeView !== "challenge") {
+      clearNotification("challenge-enroll");
+    }
+  }, [safeView, clearNotification]);
 
   return (
     <>
@@ -92,6 +130,7 @@ export function AppShell() {
         )}
       </main>
       <ModalHost />
+      {safeView === "challenge" ? <FlashToast /> : null}
     </>
   );
 }

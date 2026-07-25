@@ -52,11 +52,12 @@ export function ModalOverlay({
         <motion.div
           key="modal-overlay"
           className={cn(
-            "fixed inset-0 z-[99999] flex p-4 sm:p-6 overflow-y-auto bg-black/60 backdrop-blur-sm",
+            "fixed inset-0 z-[99999] flex p-3 sm:p-5 md:p-6 overflow-y-auto bg-black/60 backdrop-blur-sm",
             isMiddleRight
               ? "items-center justify-end md:pr-10 lg:pr-14"
               : "items-center justify-center",
           )}
+          style={{ position: "fixed", zIndex: 99999 }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -107,7 +108,7 @@ export function ModalCard({ children, className, accent = "none" }: ModalCardPro
   return (
     <div
       className={cn(
-        "bg-[var(--surface)] border border-[var(--line)] rounded-[20px] p-6 sm:p-7 max-w-[420px] w-full mx-auto shadow-[0_25px_60px_rgba(0,0,0,0.55)]",
+        "bg-[var(--surface)] border border-[var(--line)] rounded-[20px] p-4 sm:p-6 md:p-7 max-w-[420px] w-full mx-auto shadow-[0_25px_60px_rgba(0,0,0,0.55)]",
         accent === "am" && "border-t-[3px] border-t-amber",
         accent === "pm" && "border-t-[3px] border-t-purple",
         className,

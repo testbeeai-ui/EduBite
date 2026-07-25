@@ -5,13 +5,13 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ViewHeader } from "@/components/ui/modal";
-import { EDUBLAST_URL } from "@/data/config";
+import { EDUBLAST_URL, FUNBRAIN_DURATION_SEC } from "@/data/config";
 import {
   FUNBRAIN_QUESTIONS_PER_DAY,
 } from "@/lib/content/schedule";
 import { useTodayContent } from "@/lib/content/use-today-content";
 import { useGame } from "@/lib/store/game-provider";
-import { cn } from "@/lib/utils";
+import { cn, formatTime } from "@/lib/utils";
 
 export function FunBrainView() {
   const { state, startFunbrain, answerFunbrain, resetFunbrain } = useGame();
@@ -21,6 +21,7 @@ export function FunBrainView() {
   const [selected, setSelected] = useState<number | null>(null);
   const fb = state.funbrain;
   const doneForToday = fb.completed || fb.finished;
+  const sprintMinutes = Math.round(FUNBRAIN_DURATION_SEC / 60);
 
   if (content.loading) {
     return (
@@ -28,7 +29,7 @@ export function FunBrainView() {
         <ViewHeader
           eyebrow="Function 02"
           title="FunBrain"
-          subtitle="60-second daily sprint — six questions, one pass."
+          subtitle={`${sprintMinutes}-minute Quick Sprint — six questions, one pass.`}
         />
         <Card className="text-center py-10 text-sm text-[var(--text-dim)]">
           Loading today&apos;s sprint…
@@ -41,13 +42,18 @@ export function FunBrainView() {
     const answeredCorrect = pool.filter(
       (item, idx) => fb.answers[idx] === item.correct,
     ).length;
+    const timedOut = fb.timeLeft <= 0 && pool.some((_, idx) => fb.answers[idx] == null);
 
     return (
       <div className="space-y-5 pb-8">
         <ViewHeader
           eyebrow="Function 02"
           title="FunBrain"
-          subtitle="Sprint complete — RDM added to your balance."
+          subtitle={
+            timedOut
+              ? "Time’s up — Quick Sprint ended. RDM added to your balance."
+              : "Quick Sprint complete — RDM added to your balance."
+          }
         />
         <Card className="text-center py-10 px-5">
           <div className="font-display font-extrabold text-3xl text-teal">
@@ -59,7 +65,7 @@ export function FunBrainView() {
             </p>
           )}
           <p className="text-[var(--text-dim)] text-sm mt-2">
-            One FunBrain sprint per day. Come back tomorrow for the next set.
+            One FunBrain Quick Sprint per day. Come back tomorrow for the next set.
           </p>
           <p className="text-[var(--text-dim)] mt-5 text-sm leading-relaxed max-w-md mx-auto">
             For more practice, go to{" "}
@@ -186,19 +192,18 @@ export function FunBrainView() {
         <ViewHeader
           eyebrow="Function 02"
           title="FunBrain"
-          subtitle="60-second rapid-fire rounds with combos — the dopamine layer that makes revision feel like a game."
+          subtitle={`${sprintMinutes}-minute Quick Sprint with combos — the dopamine layer that makes revision feel like a game.`}
         />
         <Card className="text-center py-[50px] px-5">
-          <h2 className="font-display font-bold text-[22px]">60-second sprint</h2>
-          {fb.highScore > 0 && (
-            <p className="font-mono text-xs text-amber mt-4">
-              Personal best: {fb.highScore} pts
-            </p>
-          )}
+          <h2 className="font-display font-bold text-[22px]">Quick Sprint</h2>
+          <p className="text-[var(--text-dim)] text-sm mt-2">
+            {sprintMinutes}-minute timer · {pool.length || FUNBRAIN_QUESTIONS_PER_DAY}{" "}
+            questions · one pass
+          </p>
           <Button
             className="mt-8"
             onClick={startFunbrain}
-            disabled={pool.length < FUNBRAIN_QUESTIONS_PER_DAY}
+            disabled={pool.length === 0}
           >
             Start sprint →
           </Button>
@@ -220,12 +225,14 @@ export function FunBrainView() {
     );
   }
 
+  const timerUrgent = fb.timeLeft <= 30;
+
   return (
     <div>
       <ViewHeader
         eyebrow="Function 02"
         title="FunBrain"
-        subtitle="60-second sprint in progress"
+        subtitle="Quick Sprint in progress"
       />
       <Card>
         <div className="flex justify-between items-center gap-3 flex-wrap">
@@ -233,15 +240,18 @@ export function FunBrainView() {
             Score: {fb.score} {fb.combo > 1 && `· ${fb.combo}x combo`}
           </div>
           <div className="font-mono text-[11px] text-[var(--text-dim)]">
-            {qIndex + 1}/{FUNBRAIN_QUESTIONS_PER_DAY}
+            {qIndex + 1}/{pool.length}
           </div>
           <motion.div
             key={fb.timeLeft}
-            initial={{ scale: 1.1 }}
+            initial={{ scale: 1.08 }}
             animate={{ scale: 1 }}
-            className="font-mono font-bold text-[26px] text-pink"
+            className={cn(
+              "font-mono font-bold text-[26px] tabular-nums",
+              timerUrgent ? "text-pink" : "text-teal",
+            )}
           >
-            {fb.timeLeft}s
+            {formatTime(fb.timeLeft)}
           </motion.div>
         </div>
 

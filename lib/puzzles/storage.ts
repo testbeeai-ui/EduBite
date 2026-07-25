@@ -45,7 +45,14 @@ export async function savePuzzleAttempt(
       }),
     });
     if (!res.ok) {
-      return { ok: false, error: `puzzle save failed: ${res.status}` };
+      let detail = `puzzle save failed: ${res.status}`;
+      try {
+        const errBody = (await res.json()) as { error?: string };
+        if (errBody.error) detail = errBody.error;
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, error: detail };
     }
     const data = (await res.json()) as {
       progress?: unknown;

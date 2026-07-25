@@ -11,13 +11,23 @@ import {
   formatChallengeLongDate,
   getChallengeMonthMeta,
   getEntryState,
+  getMonthlyChallengeEntryStakeRdm,
   MONTHLY_CHALLENGE_STREAK_REQUIRED,
-  MONTHLY_CHALLENGE_TARGET_RDM,
+  getMonthlyChallengeTargetRdm,
   MONTHLY_CHALLENGE_WINNER_SLOTS,
+  isEnrolledForChallengeMonth,
+  type ChallengeCalendarDay,
   type ChallengeDayStatus,
 } from "@/lib/challenge/monthly";
+import {
+  formatCountdown,
+  formatCountdownLong,
+  msUntilDateEnd,
+  msUntilDateStart,
+} from "@/lib/puzzles/daily";
 import { useGame } from "@/lib/store/game-provider";
 import { cn, formatRdm } from "@/lib/utils";
+import { MonthlyChallengeInfoModal } from "@/components/modals/monthly-challenge-info-modal";
 
 type WinnerSlot = { name: string; time: string } | null;
 
@@ -27,27 +37,30 @@ export function MonthlyChallengeView() {
   const {
     state,
     setActiveView,
-    enrollMonthlyChallenge,
     markChallengePuzzleSubmitted,
   } = useGame();
   const { todayKey } = useAppClock();
 
   const meta = useMemo(() => getChallengeMonthMeta(todayKey), [todayKey]);
+  const targetRdm = getMonthlyChallengeTargetRdm();
+  const entryStakeRdm = getMonthlyChallengeEntryStakeRdm();
   const entryState = getEntryState({
     rdm: state.rdm,
     dateKey: todayKey,
     enrolledMonthKey: state.challengeEnrolledMonthKey,
+    enrolledMonths: state.challengeEnrolledMonths,
   });
 
   const progress = useMemo(
-    () => buildChallengeProgress(state.doseDayLog, todayKey),
-    [state.doseDayLog, todayKey],
+    () => buildChallengeProgress(state, todayKey),
+    [state, todayKey],
   );
 
   const [answer, setAnswer] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitOk, setSubmitOk] = useState<string | null>(null);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const [winners, setWinners] = useState<WinnerSlot[]>(
     Array.from({ length: MONTHLY_CHALLENGE_WINNER_SLOTS }, () => null),
   );
@@ -56,22 +69,11 @@ export function MonthlyChallengeView() {
     state.challengePuzzleSubmittedMonthKey === meta.monthKey ||
     Boolean(submitOk);
 
-  // Auto-enroll when visiting during the entry window with enough RDM
-  useEffect(() => {
-    if (
-      entryState === "open" &&
-      state.challengeEnrolledMonthKey !== meta.monthKey &&
-      state.rdm >= MONTHLY_CHALLENGE_TARGET_RDM
-    ) {
-      enrollMonthlyChallenge(meta.monthKey);
-    }
-  }, [
-    entryState,
-    enrollMonthlyChallenge,
+  const enrolled = isEnrolledForChallengeMonth(
     meta.monthKey,
     state.challengeEnrolledMonthKey,
-    state.rdm,
-  ]);
+    state.challengeEnrolledMonths,
+  );
 
   const loadWinners = useCallback(async () => {
     try {
@@ -88,18 +90,25 @@ export function MonthlyChallengeView() {
         while (slots.length < MONTHLY_CHALLENGE_WINNER_SLOTS) slots.push(null);
         setWinners(slots.slice(0, MONTHLY_CHALLENGE_WINNER_SLOTS));
       }
-      if (data.submitted) {
+      if (
+        data.submitted &&
+        state.challengePuzzleSubmittedMonthKey !== meta.monthKey
+      ) {
         markChallengePuzzleSubmitted(meta.monthKey);
       }
     } catch {
       // Board stays empty if offline / table missing
     }
-  }, [markChallengePuzzleSubmitted, meta.monthKey]);
+  }, [
+    markChallengePuzzleSubmitted,
+    meta.monthKey,
+    state.challengePuzzleSubmittedMonthKey,
+  ]);
 
   useEffect(() => {
-    if (entryState !== "open") return;
+    if (entryState !== "open" || !enrolled) return;
     void loadWinners();
-  }, [entryState, loadWinners]);
+  }, [entryState, enrolled, loadWinners]);
 
   const firstWeekday = firstWeekdayOfMonth(`${meta.monthKey}-01`);
   const lastDayLabel = formatChallengeLongDate(meta.lastDayKey);
@@ -152,6 +161,21 @@ export function MonthlyChallengeView() {
     );
   }
 
+  // Waiting for enroll from the home card "Enter Challenge" click.
+  if (!enrolled) {
+    return (
+      <div className="max-w-md mx-auto py-16 px-4 text-center space-y-4">
+        <div className="w-10 h-10 mx-auto rounded-xl bg-purple-950/60 border border-purple-500/30 flex items-center justify-center">
+          <Trophy className="w-5 h-5 text-purple-300 animate-pulse" />
+        </div>
+        <p className="text-sm text-[var(--text-dim)] m-0">Opening challenge…</p>
+        <Button variant="ghost" onClick={() => setActiveView("home")}>
+          Back to dashboard
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-[760px] mx-auto space-y-4 sm:space-y-5 pb-8">
       <div className="text-center">
@@ -166,24 +190,30 @@ export function MonthlyChallengeView() {
           Challenge
         </h1>
         <p className="text-[var(--text-dim)] text-sm max-w-[520px] mx-auto mt-2 leading-relaxed">
-          Answer your Daily Dose every single day, score 80% or higher, for a
-          minimum {MONTHLY_CHALLENGE_STREAK_REQUIRED}‑day stretch without a break.
-          Then crack the final puzzle when it opens on the last day of the month.
+          Complete your full learning day every day — all 5 tasks on Day N (Daily
+          Dose, FunBrain, Puzzle, Habits, and both Pledges) — for a minimum{" "}
+          {MONTHLY_CHALLENGE_STREAK_REQUIRED}‑day stretch without a break. Then
+          crack the final puzzle when it opens on the last day of the month.
         </p>
-        <button
-          type="button"
-          onClick={() => setActiveView("home")}
-          className="mt-3 text-xs font-mono text-teal hover:underline"
-        >
-          ← Back to dashboard
-        </button>
       </div>
 
-      <ChallengeCard icon="📋" title="How it works">
+      <ChallengeCard
+        icon="📋"
+        title="How it works"
+        action={
+          <button
+            type="button"
+            onClick={() => setShowInfoModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[rgba(127,119,221,0.18)] text-purple-300 hover:bg-[rgba(127,119,221,0.3)] hover:text-purple-200 border border-[rgba(127,119,221,0.35)] transition-all cursor-pointer shadow-sm active:scale-95"
+          >
+            Learn How
+          </button>
+        }
+      >
         <RuleStep
           n={1}
           title={`Build your ${MONTHLY_CHALLENGE_STREAK_REQUIRED}‑day streak`}
-          body={`Answer every day's Daily Dose without missing a single day, scoring at least 80% each day, for a minimum of ${MONTHLY_CHALLENGE_STREAK_REQUIRED} consecutive days. Missing a day before you hit ${MONTHLY_CHALLENGE_STREAK_REQUIRED} resets the count back to zero.`}
+          body={`Finish the whole Day card every day — all 5 dots (Daily Dose, FunBrain, Puzzle, Habits, AM+PM Pledges) — for at least ${MONTHLY_CHALLENGE_STREAK_REQUIRED} consecutive calendar days. Missing any task before you hit ${MONTHLY_CHALLENGE_STREAK_REQUIRED} resets the streak.`}
         />
         <RuleStep
           n={2}
@@ -193,7 +223,7 @@ export function MonthlyChallengeView() {
         <RuleStep
           n={3}
           title="Be first, be right"
-          body="The first 5 entries with the correct answer, as logged by our system record, are declared winners. Edubite notifies winners on WhatsApp and email."
+          body={`The first ${MONTHLY_CHALLENGE_WINNER_SLOTS} verified-correct answers win — ranked by server submit time (shown on the timer / winners board), not by score. Edubite notifies winners on WhatsApp and email.`}
         />
       </ChallengeCard>
 
@@ -219,6 +249,15 @@ export function MonthlyChallengeView() {
             </p>
           </div>
         </div>
+
+        <ChallengeTimerSection
+          todayKey={todayKey}
+          lastDayKey={meta.lastDayKey}
+          lastDayLabel={lastDayLabel}
+          onPuzzleDay={onPuzzleDay}
+          alreadySubmitted={alreadySubmitted}
+          activityDays={progress.calendar.filter((d) => d.status === "done")}
+        />
 
         <div className="flex items-center justify-between mb-2 font-mono text-[11px] text-[var(--text-dim)]">
           <span>Current stretch</span>
@@ -283,7 +322,7 @@ export function MonthlyChallengeView() {
         </div>
 
         <div className="flex flex-wrap gap-3 mt-3.5">
-          <LegendSwatch color="bg-[var(--purple)]" label="80%+ completed" />
+          <LegendSwatch color="bg-[var(--purple)]" label="Full day done" />
           <LegendSwatch
             color="bg-[rgba(212,83,126,0.35)] border border-[var(--pink)]"
             label="Missed"
@@ -323,8 +362,9 @@ export function MonthlyChallengeView() {
               <b className="block font-display text-[14px] text-[var(--text)] mb-1">
                 Not eligible this month
               </b>
-              You needed a {MONTHLY_CHALLENGE_STREAK_REQUIRED}‑day Daily Dose stretch
-              at 80%+ to unlock the final puzzle. Keep going next month.
+              You needed a {MONTHLY_CHALLENGE_STREAK_REQUIRED}‑day stretch of
+              full journey days (all 5 tasks) to unlock the final puzzle. Keep
+              going next month.
             </p>
           </div>
         ) : alreadySubmitted ? (
@@ -372,8 +412,9 @@ export function MonthlyChallengeView() {
 
       <ChallengeCard icon="🏆" title="First 5 winners">
         <p className="m-0 mb-3 text-[11.5px] text-[var(--text-dim)] leading-relaxed">
-          Winners are declared by Edubite after verifying correctness. You&apos;ll
-          be notified on WhatsApp and email — names appear here for transparency.
+          Ranked by <b className="text-[var(--text)]">server submit time</b> among
+          verified-correct answers — earliest timestamp wins. Not by score.
+          You&apos;ll be notified on WhatsApp and email.
         </p>
         <div>
           {winners.map((w, i) => (
@@ -410,9 +451,10 @@ export function MonthlyChallengeView() {
         <div className="bg-[var(--surface-2)] border border-[var(--line)] rounded-xl px-4 py-3.5 space-y-2.5 text-[11px] text-[#5A6172] leading-relaxed">
           <p className="m-0">
             <b className="text-[var(--text-dim)]">1.</b> To qualify for the final
-            puzzle, you must complete the Daily Dose with a minimum score of 80%
-            every day for at least {MONTHLY_CHALLENGE_STREAK_REQUIRED} consecutive
-            days within the challenge window. Missing a day before reaching{" "}
+            puzzle, you must complete the full learning day — all 5 tasks on your
+            Day card (Daily Dose, FunBrain, Puzzle, Habits, and AM+PM Pledges) —
+            for at least {MONTHLY_CHALLENGE_STREAK_REQUIRED} consecutive calendar
+            days within the challenge window. Missing any task before reaching{" "}
             {MONTHLY_CHALLENGE_STREAK_REQUIRED} resets the streak.
           </p>
           <p className="m-0">
@@ -434,8 +476,148 @@ export function MonthlyChallengeView() {
             <b className="text-[var(--text-dim)]">5.</b> The Edubite system record
             of submission time and correctness is binding on all parties.
           </p>
+          <p className="m-0">
+            <b className="text-[var(--text-dim)]">6.</b> Entry stake — joining
+            this month&apos;s challenge claims{" "}
+            <b className="text-[var(--amber)]">
+              {formatRdm(entryStakeRdm)} RDM
+            </b>{" "}
+            from your balance. That skin-in-the-game keeps the field serious:
+            only committed learners race for the prizes. The stake is
+            non-refundable once you enroll.
+          </p>
+          <p className="m-0">
+            <b className="text-[var(--text-dim)]">7.</b> Valid for this month
+            only. Enrollment covers the current calendar month. Next month is a
+            new challenge — unlock again at {formatRdm(targetRdm)} RDM and pay a
+            fresh {formatRdm(entryStakeRdm)} RDM stake during days 1–5.
+          </p>
         </div>
       </ChallengeCard>
+
+      <MonthlyChallengeInfoModal
+        open={showInfoModal}
+        onClose={() => setShowInfoModal(false)}
+      />
+    </div>
+  );
+}
+
+function formatActivityTime(iso: string | null): string {
+  if (!iso) return "Completed";
+  try {
+    return new Date(iso).toLocaleString("en-IN", {
+      day: "numeric",
+      month: "short",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Kolkata",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function ChallengeTimerSection({
+  todayKey: clockToday,
+  lastDayKey,
+  lastDayLabel,
+  onPuzzleDay,
+  alreadySubmitted,
+  activityDays,
+}: {
+  todayKey: string;
+  lastDayKey: string;
+  lastDayLabel: string;
+  onPuzzleDay: boolean;
+  alreadySubmitted: boolean;
+  activityDays: ChallengeCalendarDay[];
+}) {
+  const [nowTick, setNowTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const now = useMemo(() => new Date(nowTick), [nowTick]);
+  const opensIn = msUntilDateStart(lastDayKey, now);
+  const closesIn = msUntilDateEnd(lastDayKey, now);
+
+  let timerLabel: string;
+  let timerValue: string;
+  let timerHint: string;
+
+  if (alreadySubmitted) {
+    timerLabel = "Your entry is locked";
+    timerValue = "Submitted";
+    timerHint =
+      "Winner rank uses the server timestamp from your submit — earliest verified-correct wins.";
+  } else if (onPuzzleDay) {
+    timerLabel = "Puzzle day · submit window";
+    timerValue = formatCountdown(closesIn);
+    timerHint =
+      "Live countdown to end of puzzle day. Among correct answers, earlier server time ranks higher.";
+  } else if (clockToday > lastDayKey) {
+    timerLabel = "Puzzle window";
+    timerValue = "Closed";
+    timerHint = "This month’s final puzzle window has ended.";
+  } else {
+    timerLabel = "Final puzzle opens";
+    timerValue = formatCountdownLong(opensIn);
+    timerHint = `Opens ${lastDayLabel} at 12:00 AM — first ${MONTHLY_CHALLENGE_WINNER_SLOTS} verified-correct by server time win.`;
+  }
+
+  return (
+    <div className="mb-5 space-y-3">
+      <div className="rounded-[14px] border border-[rgba(232,196,104,0.35)] bg-[rgba(232,196,104,0.08)] px-4 py-3.5">
+        <div className="font-mono text-[10px] tracking-wider uppercase text-[var(--gold)] mb-1">
+          {timerLabel}
+        </div>
+        <div className="font-display font-extrabold text-[28px] tabular-nums text-[var(--text)] leading-none tracking-wide">
+          {timerValue}
+        </div>
+        <p className="m-0 mt-2 text-[11px] text-[var(--text-dim)] leading-snug">
+          {timerHint}
+        </p>
+      </div>
+
+      <div className="rounded-[14px] border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="font-mono text-[10px] tracking-wider uppercase text-[var(--text-dim)]">
+            Day-by-day activity
+          </span>
+          <span className="font-mono text-[10px] text-[var(--purple)]">
+            {activityDays.length} full day
+            {activityDays.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        {activityDays.length === 0 ? (
+          <p className="m-0 text-[11.5px] text-[var(--text-dim)] leading-relaxed">
+            Complete all 5 tasks today — this list grows one row per full day,
+            with the time the day was finished.
+          </p>
+        ) : (
+          <ul className="m-0 p-0 list-none space-y-1.5 max-h-40 overflow-y-auto">
+            {activityDays.map((day) => (
+              <li
+                key={day.dateKey}
+                className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface)] border border-[var(--line)] px-2.5 py-1.5"
+              >
+                <span className="text-[12px] font-semibold text-[var(--text)]">
+                  Day {day.day}
+                  {day.isPuzzleDay ? " · Puzzle" : ""}
+                </span>
+                <span className="font-mono text-[10px] text-[var(--text-dim)] tabular-nums text-right">
+                  {formatActivityTime(day.completedAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
@@ -461,7 +643,7 @@ function streakBannerCopy(args: {
     }
     return `Locked in — you're eligible for the final puzzle on ${args.lastDay} ${args.monthLabel}.`;
   }
-  return "Keep your Daily Dose streak alive at 80%+ to unlock the final puzzle.";
+  return "Complete all 5 tasks on today's Day card to grow your streak and unlock the final puzzle.";
 }
 
 function calendarCellClass(
@@ -501,6 +683,9 @@ function LockedChallengeScreen({
   nextEntryOpensLabel: string;
   onBack: () => void;
 }) {
+  const targetRdm = getMonthlyChallengeTargetRdm();
+  const [showModal, setShowModal] = useState(false);
+
   return (
     <div className="max-w-md mx-auto py-12 px-4 text-center space-y-5">
       <div className="w-14 h-14 mx-auto rounded-2xl bg-purple-950/60 border border-purple-500/30 flex items-center justify-center">
@@ -518,13 +703,26 @@ function LockedChallengeScreen({
         </h1>
         <p className="text-sm text-[var(--text-dim)] mt-2 leading-relaxed">
           {entryState === "locked_rdm"
-            ? `Reach ${formatRdm(MONTHLY_CHALLENGE_TARGET_RDM)} RDM to unlock Monthly Challenge entry. You have ${formatRdm(rdm)} RDM.`
+            ? `Reach ${formatRdm(targetRdm)} RDM to unlock Monthly Challenge. You have ${formatRdm(rdm)} RDM. Entry stake is listed in Terms & Conditions.`
             : `Entry is only open on days 1–5. Once you enter, the challenge stays valid for the rest of that month. Next window: ${nextEntryOpensLabel}.`}
         </p>
       </div>
-      <Button variant="primary" onClick={onBack}>
-        Back to dashboard
-      </Button>
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+        <Button variant="primary" onClick={onBack}>
+          Back to dashboard
+        </Button>
+        <button
+          type="button"
+          onClick={() => setShowModal(true)}
+          className="text-xs font-mono text-indigo-300 hover:text-indigo-200 underline cursor-pointer"
+        >
+          Learn how it works
+        </button>
+      </div>
+      <MonthlyChallengeInfoModal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+      />
     </div>
   );
 }
@@ -533,27 +731,32 @@ function ChallengeCard({
   icon,
   title,
   children,
+  action,
   mutedIcon,
 }: {
   icon: string;
   title: string;
   children: React.ReactNode;
+  action?: React.ReactNode;
   mutedIcon?: boolean;
 }) {
   return (
     <div className="rounded-[20px] border border-[var(--line)] bg-[var(--surface)] p-[22px]">
-      <div className="flex items-center gap-2.5 mb-3.5">
-        <div
-          className={cn(
-            "w-8 h-8 rounded-[10px] flex items-center justify-center text-[15px] shrink-0",
-            mutedIcon
-              ? "bg-[var(--surface-2)] text-[var(--text-dim)]"
-              : "bg-[rgba(127,119,221,0.16)] text-[var(--purple)]",
-          )}
-        >
-          {icon}
+      <div className="flex items-center justify-between gap-2.5 mb-3.5">
+        <div className="flex items-center gap-2.5">
+          <div
+            className={cn(
+              "w-8 h-8 rounded-[10px] flex items-center justify-center text-[15px] shrink-0",
+              mutedIcon
+                ? "bg-[var(--surface-2)] text-[var(--text-dim)]"
+                : "bg-[rgba(127,119,221,0.16)] text-[var(--purple)]",
+            )}
+          >
+            {icon}
+          </div>
+          <h3 className="font-display text-[15.5px] m-0">{title}</h3>
         </div>
-        <h3 className="font-display text-[15.5px] m-0">{title}</h3>
+        {action}
       </div>
       {children}
     </div>
