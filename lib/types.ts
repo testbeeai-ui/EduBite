@@ -57,6 +57,17 @@ export interface DayCriteria {
   puzzles: boolean;
   habits: boolean;
   pledges: boolean;
+  /**
+   * ISO timestamp when this calendar day first became a full journey day.
+   * Used for challenge activity timeline / fairness display.
+   */
+  completedAt?: string | null;
+  /** Per-day pledge AM status */
+  pledgeAM?: boolean;
+  /** Per-day pledge PM status */
+  pledgePM?: boolean;
+  /** Per-day completed habit IDs */
+  habitsDone?: string[];
 }
 
 export type JourneyDayStatus = "join" | "past" | "today" | "upcoming";
@@ -73,6 +84,10 @@ export interface DoseState {
   locked: boolean;
   correct: number;
   completed: boolean;
+  /** Active timed attempt — timer ticks while true. */
+  running: boolean;
+  /** Seconds remaining in the current DailyDose attempt. */
+  timeLeft: number;
   index11: number;
   locked11: boolean;
   correct11: number;
@@ -128,19 +143,41 @@ export interface GameState {
    * Keyed by YYYY-MM-DD. Kept across day rolls.
    */
   doseDayLog: Record<string, DoseDayRecord>;
-  /** Month key (YYYY-MM) the user enrolled in during days 1–5. */
+  /**
+   * Per-day full journey criteria (all 5 pillars). Keyed by YYYY-MM-DD.
+   * Survives day rolls and admin Date traveler jumps.
+   */
+  dayCriteriaLog: Record<string, DayCriteria>;
+  /**
+   * Most recently enrolled month (YYYY-MM). Prefer challengeEnrolledMonths for access checks.
+   */
   challengeEnrolledMonthKey: string | null;
+  /** All months the user has paid entry for (survives clock override / re-enroll). */
+  challengeEnrolledMonths: string[];
   /** Month key if they already submitted this month's final puzzle. */
   challengePuzzleSubmittedMonthKey: string | null;
 }
 
 export interface DoseDayRecord {
   correct: number;
+  wrong?: number;
   total: number;
   /** 0–100 */
   pct: number;
   completed: boolean;
   classLevel: "11" | "12";
+  timeSpentSec?: number;
+}
+
+export interface FunBrainDayRecord {
+  correct: number;
+  wrong: number;
+  total: number;
+  score: number;
+  highScore: number;
+  combo: number;
+  completed: boolean;
+  timeSpentSec?: number;
 }
 
 export interface AchievementDef {

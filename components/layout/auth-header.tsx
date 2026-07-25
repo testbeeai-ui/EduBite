@@ -64,10 +64,7 @@ export function AuthHeaderActions({ streak }: AuthHeaderActionsProps) {
           <span className="w-7 h-7 rounded-full bg-[var(--surface)] border border-[var(--line)] flex items-center justify-center shrink-0">
             <User className="w-3.5 h-3.5 text-[var(--text-dim)]" />
           </span>
-          <span className="hidden sm:inline font-display font-bold text-xs text-teal">
-            Login
-          </span>
-          <span className="sm:hidden font-display font-bold text-[11px] text-teal">
+          <span className="font-display font-bold text-[11px] sm:text-xs text-teal">
             Login
           </span>
           <LogIn className="w-3.5 h-3.5 text-teal sm:hidden" aria-hidden />

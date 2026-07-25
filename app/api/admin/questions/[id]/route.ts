@@ -8,6 +8,7 @@ import {
   type ContentQuestionInput,
 } from "@/lib/db/content-questions";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type RouteContext = { params: Promise<{ id: string }> };

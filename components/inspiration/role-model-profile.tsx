@@ -34,9 +34,9 @@ export function RoleModelProfile({ roleModel }: RoleModelProfileProps) {
           </div>
         </div>
 
-        <div className="mt-3">
+        <div className="mt-3.5">
           {expanded ? (
-            <div className="space-y-1 text-[13px] leading-snug text-[var(--text)]">
+            <div className="space-y-2 text-[13.5px] leading-relaxed text-[var(--text-muted)] font-normal">
               {roleModel.bio
                 .split(/\n\s*\n/)
                 .map((paragraph) => paragraph.trim())
@@ -46,36 +46,36 @@ export function RoleModelProfile({ roleModel }: RoleModelProfileProps) {
                 ))}
             </div>
           ) : (
-            <p className="line-clamp-4 whitespace-pre-line text-[13px] leading-snug text-[var(--text)]">
+            <p className="line-clamp-4 whitespace-pre-line text-[13.5px] leading-relaxed text-[var(--text-muted)] font-normal">
               {roleModel.bio}
             </p>
           )}
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
-            className="mt-1 font-mono text-[11px] tracking-wide text-teal transition-colors hover:text-[var(--text)]"
+            className="mt-1.5 font-mono text-[11px] font-medium tracking-wide text-teal transition-colors hover:text-[var(--text)]"
           >
             {expanded ? "less" : "more"}
           </button>
         </div>
 
         {roleModel.inspireWhy ? (
-          <div className="mt-3 rounded-xl border border-[rgba(251,191,36,0.22)] bg-[rgba(120,70,20,0.35)] px-3.5 py-3">
+          <div className="mt-3.5 rounded-xl border border-[rgba(251,191,36,0.22)] bg-[rgba(251,191,36,0.07)] px-3.5 py-3">
             <div className="font-mono text-[10px] font-semibold tracking-[0.12em] text-[var(--amber)]">
               WHY THIS SHOULD INSPIRE CLASS XI–XII PCM STUDENTS
             </div>
-            <p className="mt-1.5 text-[12.5px] leading-snug text-[var(--text)]">
+            <p className="mt-1.5 text-[13px] leading-relaxed text-[#d6dae5] font-normal">
               {roleModel.inspireWhy}
             </p>
           </div>
         ) : null}
 
         {roleModel.pcmConnections ? (
-          <div className="mt-3">
-            <div className="font-mono text-[10px] tracking-[0.12em] text-teal">
+          <div className="mt-3.5">
+            <div className="font-mono text-[10px] font-semibold tracking-[0.12em] text-teal">
               PCM CONNECTIONS
             </div>
-            <p className="mt-1 text-[12px] leading-snug text-[var(--text-dim)]">
+            <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--text-dim)] font-normal">
               {roleModel.pcmConnections}
             </p>
           </div>

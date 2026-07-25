@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { allowProgressWrite } from "@/lib/api/rate-limit";
 import { getRequestUser } from "@/lib/auth/server";
-import {
-  assertPayloadSize,
-} from "@/lib/db/normalize";
+import { isValidDateKey } from "@/lib/clock/override-store";
+import { assertPayloadSize } from "@/lib/db/normalize";
 import {
   lockPuzzleAttempt,
   readNormalizedPuzzleProgress,
 } from "@/lib/db/supabase-progress";
 import { puzzleForDate } from "@/lib/puzzles/daily";
 import type { PuzzleAttempt } from "@/lib/puzzles/types";
+import { daysBetween, realTodayKey } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
@@ -67,11 +68,24 @@ export async function PUT(request: Request) {
     if (
       typeof attempt.puzzleId !== "string" ||
       typeof attempt.dateKey !== "string" ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(attempt.dateKey) ||
+      !isValidDateKey(attempt.dateKey) ||
       typeof attempt.note !== "string"
     ) {
       return NextResponse.json({ error: "Invalid attempt" }, { status: 400 });
     }
+
+    // App Clock may send a simulated date; keep within QA window of real today.
+    if (Math.abs(daysBetween(realTodayKey(), attempt.dateKey)) > 120) {
+      return NextResponse.json(
+        {
+          error:
+            "Puzzle date is too far from today. Clear or adjust the admin date override.",
+          code: "date_out_of_range",
+        },
+        { status: 400 },
+      );
+    }
+
     const puzzle = puzzleForDate(attempt.dateKey);
     const validBase =
       puzzle !== undefined &&

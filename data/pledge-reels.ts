@@ -25,9 +25,10 @@ export function getPledgeCatalog(slot: "am" | "pm" = "pm"): PledgeReelDay[] {
 export function getPledgeReelDayNumber(
   joinedDate: string,
   catalog: PledgeReelDay[] = PLEDGE_REEL_DAYS,
+  asOfDateKey: string = todayKey(),
 ): number {
   if (catalog.length === 0) return 1;
-  const daysSinceJoin = Math.max(0, daysBetween(joinedDate, todayKey()));
+  const daysSinceJoin = Math.max(0, daysBetween(joinedDate, asOfDateKey));
   return (daysSinceJoin % catalog.length) + 1;
 }
 
@@ -42,12 +43,13 @@ export function getPledgeReelForDay(
 export function getPledgeReelForUser(
   joinedDate: string,
   catalogOrSlot: PledgeReelDay[] | "am" | "pm" = PLEDGE_REEL_DAYS,
+  asOfDateKey: string = todayKey(),
 ): PledgeReelDay {
   const catalog = Array.isArray(catalogOrSlot)
     ? catalogOrSlot
     : getPledgeCatalog(catalogOrSlot);
   return getPledgeReelForDay(
-    getPledgeReelDayNumber(joinedDate, catalog),
+    getPledgeReelDayNumber(joinedDate, catalog, asOfDateKey),
     catalog,
   );
 }

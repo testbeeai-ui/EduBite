@@ -36,7 +36,7 @@ export const ACHIEVEMENT_DEFINITIONS: AchievementDef[] = [
     id: "funbrain-high",
     icon: "⚡",
     title: "FunBrain High Scorer",
-    desc: "Score 100+ points in a single 60-second sprint.",
+    desc: "Score 100+ points in a single Quick Sprint.",
   },
   {
     id: "habits-perfect",

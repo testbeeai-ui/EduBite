@@ -482,41 +482,6 @@ export function SchedulePreviewPanel({ mode }: { mode: Mode }) {
               {data.inspiration.phenomenon.source}
             </div>
           </Card>
-
-          <Card>
-            <div className="font-mono text-[11px] text-[var(--text-dim)] mb-3">
-              Next 14 days from preview date
-            </div>
-            <ul className="space-y-3">
-              {data.inspiration.upcoming.map((day) => (
-                <li
-                  key={day.dateKey}
-                  className="border-b border-[var(--line)] pb-3 last:border-b-0 last:pb-0"
-                >
-                  <div className="font-mono text-[11px] text-teal">
-                    {day.dateKey}
-                  </div>
-                  <div className="text-sm mt-1">
-                    <span className="text-[var(--text-dim)]">Quote · </span>
-                    {day.quote.category}: {day.quote.quote}
-                  </div>
-                  <div className="text-sm mt-1">
-                    <span className="text-[var(--text-dim)]">
-                      Role model · #{day.roleModel.index} ·{" "}
-                    </span>
-                    {day.roleModel.name} — {day.roleModel.tag}
-                  </div>
-                  <div className="text-sm mt-1">
-                    <span className="text-[var(--text-dim)]">
-                      Phenomena · {day.phenomenon.subject} ·{" "}
-                      {day.phenomenon.badge} ·{" "}
-                    </span>
-                    {day.phenomenon.question}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
         </div>
       )}
     </div>

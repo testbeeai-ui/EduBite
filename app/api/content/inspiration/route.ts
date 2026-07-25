@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
+import { resolveContentDateKey } from "@/lib/clock/resolve-content-date";
 import { loadInspiration } from "@/lib/content/inspiration";
 
 export const runtime = "nodejs";
 
-/** Same for every user on a given calendar day — safe to CDN-cache briefly. */
-export async function GET() {
+/** Inspiration for a calendar day. Optional `dateKey` follows App Clock. */
+export async function GET(request: Request) {
   try {
-    const data = await loadInspiration();
+    const url = new URL(request.url);
+    const dateKey = resolveContentDateKey(url.searchParams.get("dateKey"));
+    const data = await loadInspiration(dateKey);
     return NextResponse.json(data, {
       headers: {
         "Cache-Control":
-          "public, s-maxage=300, stale-while-revalidate=3600, max-age=60",
+          "private, max-age=60, stale-while-revalidate=300",
       },
     });
   } catch (err) {

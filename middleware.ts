@@ -63,6 +63,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Fast-path guest navigations: if no Supabase auth cookies exist, skip expensive remote getUser calls.
+  const hasAuthCookies = request.cookies.getAll().some((c) => c.name.startsWith("sb-"));
+  if (!hasAuthCookies && !pathname.startsWith("/admin")) {
+    return NextResponse.next();
+  }
+
   try {
     const { supabase, getResponse } = createEdubiteSupabaseMiddleware(request);
     const {

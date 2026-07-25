@@ -59,7 +59,6 @@ export function TopNav({ activeView, onNavigate }: TopNavProps) {
     >
       {NAV_ITEMS.map((item) => {
         const active = activeView === item.id;
-        const short = item.shortLabel;
 
         return (
           <button
@@ -86,21 +85,8 @@ export function TopNav({ activeView, onNavigate }: TopNavProps) {
             ) : null}
             <span className="relative z-10 flex items-center gap-1.5">
               <NavEmoji emoji={item.emoji} accent={item.accent} active={active} />
-              {/* Show label: active item always shows short label on md/lg and full on 2xl; inactive shows short on xl */}
-              <span
-                className={cn(
-                  "relative z-10 whitespace-nowrap",
-                  active ? "inline 2xl:hidden" : "hidden xl:inline 2xl:hidden",
-                )}
-              >
-                {short}
-              </span>
-              <span
-                className={cn(
-                  "relative z-10 whitespace-nowrap hidden",
-                  "2xl:inline",
-                )}
-              >
+              {/* Single label only — never short+full side by side (breaks when CSS fails to load). */}
+              <span className="relative z-10 whitespace-nowrap">
                 {item.label}
               </span>
             </span>

@@ -2,7 +2,10 @@ export const STORAGE_KEY = "edubite.game.v1";
 
 export const RDM_PER_DOSE_CORRECT = 45;
 export const DOSE_QUESTION_COUNT = 5;
-export const FUNBRAIN_DURATION_SEC = 60;
+/** DailyDose exam window — session ends when this hits zero. */
+export const DOSE_DURATION_SEC = 4 * 60;
+/** FunBrain Quick Sprint window — session ends when this hits zero. */
+export const FUNBRAIN_DURATION_SEC = 6 * 60;
 export const FUNBRAIN_BASE_POINTS = 10;
 export const FUNBRAIN_COMBO_BONUS = 5;
 export const GYAN_STREAK_GOAL_MS = 30 * 60 * 1000;
@@ -39,14 +42,14 @@ export const FEATURES = {
   dailydose: {
     id: "dailydose" as const,
     label: "DailyDose",
-    tagline: "3 MIN · +45 RDM",
+    tagline: "4 MIN TIMER",
     eyebrow: "Function 01",
     streakLabel: "Daily Dose",
   },
   funbrain: {
     id: "funbrain" as const,
     label: "FunBrain",
-    tagline: "60 SEC SPRINT",
+    tagline: "6 MIN · QUICK SPRINT",
     eyebrow: "Function 02",
     streakLabel: "Fun Brain",
   },
@@ -69,13 +72,13 @@ export const EDUBLAST_URL = "https://www.edublast.in";
 
 export const NAV_ITEMS = [
   { id: "home", label: "Home", shortLabel: "Home", emoji: "⌂", accent: "from-teal/25 to-blue/15" },
-  { id: "dailydose", label: "DailyDose", shortLabel: "Dose", emoji: "🍬", accent: "from-teal/30 to-teal/10" },
-  { id: "funbrain", label: "FunBrain", shortLabel: "Fun", emoji: "⚡", accent: "from-blue/30 to-amber/15" },
-  { id: "gyan", label: FEATURES.gyan.label, shortLabel: "Gym", emoji: "🧠", accent: "from-purple/30 to-purple/10" },
-  { id: "puzzles", label: FEATURES.puzzles.label, shortLabel: "Puzzles", emoji: "🧩", accent: "from-gold/30 to-amber/10" },
-  { id: "wasquad", label: "WA Squad", shortLabel: "Squad", emoji: "💬", accent: "from-[#25D366]/30 to-[#25D366]/10" },
+  { id: "dailydose", label: "DailyDose", shortLabel: "DailyDose", emoji: "🍬", accent: "from-teal/30 to-teal/10" },
+  { id: "funbrain", label: "FunBrain", shortLabel: "FunBrain", emoji: "⚡", accent: "from-blue/30 to-amber/15" },
+  { id: "gyan", label: FEATURES.gyan.label, shortLabel: FEATURES.gyan.label, emoji: "🧠", accent: "from-purple/30 to-purple/10" },
+  { id: "puzzles", label: FEATURES.puzzles.label, shortLabel: FEATURES.puzzles.label, emoji: "🧩", accent: "from-gold/30 to-amber/10" },
+  { id: "wasquad", label: "WA Squad", shortLabel: "WA Squad", emoji: "💬", accent: "from-[#25D366]/30 to-[#25D366]/10" },
   { id: "habits", label: "Habits", shortLabel: "Habits", emoji: "🌱", accent: "from-emerald/30 to-teal/10" },
-  { id: "achievements", label: "Achievements", shortLabel: "Badges", emoji: "🏆", accent: "from-amber/30 to-orange/10" },
-  { id: "inspiration", label: "Inspiration", shortLabel: "Spark", emoji: "🌟", accent: "from-yellow/25 to-amber/10" },
+  { id: "achievements", label: "Achievements", shortLabel: "Achievements", emoji: "🏆", accent: "from-amber/30 to-orange/10" },
+  { id: "inspiration", label: "Inspiration", shortLabel: "Inspiration", emoji: "🌟", accent: "from-yellow/25 to-amber/10" },
   { id: "ai", label: "AI", shortLabel: "AI", emoji: "🤖", accent: "from-purple/30 to-indigo/10" },
 ] as const;

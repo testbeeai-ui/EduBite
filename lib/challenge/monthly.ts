@@ -1,12 +1,28 @@
 import { DOSE_QUESTION_COUNT } from "@/data/config";
 import type { DoseDayRecord, GameState } from "@/lib/types";
+import { criteriaForDate, isFullDay } from "@/lib/gamification";
+import { getLiveRdmAmount } from "@/lib/rdm/live-amounts";
 import { addDaysToKey, parseDateKey } from "@/lib/utils";
 
+/** Fallback constant — prefer getMonthlyChallengeTargetRdm() at runtime. */
 export const MONTHLY_CHALLENGE_TARGET_RDM = 5000;
+/** Fallback — prefer getMonthlyChallengeEntryStakeRdm() at runtime. */
+export const MONTHLY_CHALLENGE_ENTRY_STAKE_RDM = 3000;
 export const MONTHLY_CHALLENGE_ENTRY_LAST_DAY = 5;
 export const MONTHLY_CHALLENGE_STREAK_REQUIRED = 15;
 export const MONTHLY_CHALLENGE_PASS_PCT = 80;
 export const MONTHLY_CHALLENGE_WINNER_SLOTS = 5;
+
+export function getMonthlyChallengeTargetRdm(): number {
+  const live = getLiveRdmAmount("challenge.target_rdm");
+  return live > 0 ? live : MONTHLY_CHALLENGE_TARGET_RDM;
+}
+
+/** RDM deducted on enroll — live from edubite_rdm_rewards. */
+export function getMonthlyChallengeEntryStakeRdm(): number {
+  const live = getLiveRdmAmount("challenge.entry_stake");
+  return live >= 0 ? live : MONTHLY_CHALLENGE_ENTRY_STAKE_RDM;
+}
 
 export type MonthlyEntryState = "locked_rdm" | "locked_window" | "open";
 
@@ -18,6 +34,8 @@ export type ChallengeCalendarDay = {
   status: ChallengeDayStatus;
   pct: number | null;
   isPuzzleDay: boolean;
+  /** When the full day was first completed (server/client ISO). */
+  completedAt: string | null;
 };
 
 export type ChallengeMonthMeta = {
@@ -35,9 +53,9 @@ export type ChallengeMonthMeta = {
 
 export type ChallengeProgress = {
   calendar: ChallengeCalendarDay[];
-  /** Consecutive 80%+ days ending at today (or last completed day if today pending). */
+  /** Consecutive full days (all 5 journey criteria) ending at today. */
   currentStretch: number;
-  /** Best consecutive 80%+ run in this month so far. */
+  /** Best consecutive full-day run in this month so far. */
   bestStretch: number;
   streakMet: boolean;
   onPuzzleDay: boolean;
@@ -93,19 +111,83 @@ export function getChallengeMonthMeta(dateKey: string): ChallengeMonthMeta {
 
 /**
  * Access to the challenge page for the current month:
- * - Need 5,000 RDM
- * - Enter only on days 1–5, OR already enrolled this month (valid all month)
+ * - Enrolled for THIS monthKey → open for the rest of that month
+ *   (stake already paid; balance may be below unlock — do NOT re-lock)
+ * - Last month's enroll does not carry over — next month needs a fresh unlock + stake
+ * - Else need unlock RDM, and days 1–5 entry window
  */
+export function isEnrolledForChallengeMonth(
+  monthKey: string,
+  enrolledMonthKey?: string | null,
+  enrolledMonths?: string[] | null,
+): boolean {
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) return false;
+  if (enrolledMonthKey === monthKey) return true;
+  return Array.isArray(enrolledMonths) && enrolledMonths.includes(monthKey);
+}
+
 export function getEntryState(args: {
   rdm: number;
   dateKey: string;
   enrolledMonthKey?: string | null;
+  enrolledMonths?: string[] | null;
 }): MonthlyEntryState {
-  if (args.rdm < MONTHLY_CHALLENGE_TARGET_RDM) return "locked_rdm";
   const meta = getChallengeMonthMeta(args.dateKey);
-  if (args.enrolledMonthKey === meta.monthKey) return "open";
+  // Paid entry stake + enrolled for the current month — stays open all month.
+  if (
+    isEnrolledForChallengeMonth(
+      meta.monthKey,
+      args.enrolledMonthKey,
+      args.enrolledMonths,
+    )
+  ) {
+    return "open";
+  }
+  if (args.rdm < getMonthlyChallengeTargetRdm()) return "locked_rdm";
   if (isInEntryWindow(args.dateKey)) return "open";
   return "locked_window";
+}
+
+/** Merge a newly paid month into game-state enrollment fields. */
+export function withChallengeEnrollment(
+  state: Pick<
+    GameState,
+    "challengeEnrolledMonthKey" | "challengeEnrolledMonths"
+  >,
+  monthKey: string,
+): {
+  challengeEnrolledMonthKey: string;
+  challengeEnrolledMonths: string[];
+} {
+  const months = mergeEnrolledMonths(
+    state.challengeEnrolledMonths,
+    state.challengeEnrolledMonthKey,
+    monthKey,
+  );
+  return {
+    challengeEnrolledMonthKey: monthKey,
+    challengeEnrolledMonths: months,
+  };
+}
+
+export function mergeEnrolledMonths(
+  ...parts: Array<string[] | string | null | undefined>
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const part of parts) {
+    const list = Array.isArray(part)
+      ? part
+      : typeof part === "string"
+        ? [part]
+        : [];
+    for (const key of list) {
+      if (!/^\d{4}-\d{2}$/.test(key) || seen.has(key)) continue;
+      seen.add(key);
+      out.push(key);
+    }
+  }
+  return out.sort();
 }
 
 export function doseMeetsChallengeThreshold(
@@ -156,7 +238,7 @@ export function recordDoseDayInState(
 }
 
 export function buildChallengeProgress(
-  doseDayLog: Record<string, DoseDayRecord>,
+  state: GameState,
   dateKey: string,
 ): ChallengeProgress {
   const meta = getChallengeMonthMeta(dateKey);
@@ -166,48 +248,73 @@ export function buildChallengeProgress(
   for (let day = 1; day <= meta.daysInMonth; day++) {
     const key = monthDayKey(meta.monthKey, day);
     const isPuzzleDay = day === meta.lastDay;
-    const record = doseDayLog[key];
+    const criteria = criteriaForDate(state, key, dateKey);
+    const full = isFullDay(criteria);
+    const criteriaDone = [
+      criteria.dose,
+      criteria.funbrain,
+      criteria.puzzles,
+      criteria.habits,
+      criteria.pledges,
+    ].filter(Boolean).length;
 
     if (day > todayDay) {
-      calendar.push({
-        day,
-        dateKey: key,
-        status: "upcoming",
-        pct: null,
-        isPuzzleDay,
-      });
+      // Keep logged full days visible even if App Clock is earlier (QA jumps).
+      if (full) {
+        calendar.push({
+          day,
+          dateKey: key,
+          status: "done",
+          pct: Math.round((criteriaDone / 5) * 100),
+          isPuzzleDay,
+          completedAt: criteria.completedAt ?? null,
+        });
+      } else {
+        calendar.push({
+          day,
+          dateKey: key,
+          status: "upcoming",
+          pct: null,
+          isPuzzleDay,
+          completedAt: null,
+        });
+      }
       continue;
     }
 
-    if (record?.completed && record.pct >= MONTHLY_CHALLENGE_PASS_PCT) {
+    // Full journey day = all 5 dots (Dose, FunBrain, Puzzle, Habits, Pledges).
+    if (full) {
       calendar.push({
         day,
         dateKey: key,
         status: "done",
-        pct: record.pct,
+        pct: Math.round((criteriaDone / 5) * 100),
         isPuzzleDay,
+        completedAt: criteria.completedAt ?? null,
       });
       continue;
     }
 
-    if (day === todayDay && !record?.completed) {
+    if (day === todayDay) {
       calendar.push({
         day,
         dateKey: key,
         status: "today_pending",
-        pct: record?.pct ?? null,
+        pct: Math.round((criteriaDone / 5) * 100),
         isPuzzleDay,
+        completedAt: null,
       });
       continue;
     }
 
-    // Past day without 80%+ completion = missed (breaks streak)
+    // Past day without a full journey day = missed (breaks streak).
     calendar.push({
       day,
       dateKey: key,
       status: "missed",
-      pct: record?.completed ? record.pct : null,
+      pct: criteriaDone > 0 ? Math.round((criteriaDone / 5) * 100) : null,
       isPuzzleDay,
+      completedAt: null,
     });
   }
 
@@ -223,10 +330,12 @@ export function buildChallengeProgress(
   let bestStretch = 0;
   let run = 0;
   for (const cell of calendar) {
-    if (cell.day > todayDay) break;
     if (cell.status === "done") {
       run++;
       bestStretch = Math.max(bestStretch, run);
+    } else if (cell.status === "upcoming") {
+      // Unplayed gap — breaks consecutive run across the month.
+      run = 0;
     } else if (cell.status !== "today_pending") {
       run = 0;
     }

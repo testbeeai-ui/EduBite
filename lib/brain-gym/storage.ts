@@ -10,6 +10,7 @@ import type {
 } from "@/lib/brain-gym/types";
 import { normalizeBrainGymProgress } from "@/lib/db/normalize";
 import { pickWithSeed } from "@/lib/brain-gym/utils/shuffle";
+import { getLiveRdmAmount } from "@/lib/rdm/live-amounts";
 import { todayKey, addDaysToKey } from "@/lib/utils";
 
 export const BRAIN_GYM_KEY = "edubite.braingym.v1";
@@ -400,11 +401,16 @@ export function applySessionResult(
     },
   };
 
-  // RDM: base + win bonus + daily bonus
-  let rdmGain = Math.max(5, Math.floor(score / 20));
-  if (result.won) rdmGain += 15;
-  if (isDaily && result.won) rdmGain += 25;
-  rdmGain = Math.min(120, rdmGain);
+  // RDM: base + win bonus + daily bonus (amounts from admin RDM table)
+  const minBase = getLiveRdmAmount("brain_gym.min_base");
+  const divisor = Math.max(1, getLiveRdmAmount("brain_gym.score_divisor"));
+  const winBonus = getLiveRdmAmount("brain_gym.win_bonus");
+  const dailyBonus = getLiveRdmAmount("brain_gym.daily_win_bonus");
+  const cap = getLiveRdmAmount("brain_gym.session_cap");
+  let rdmGain = Math.max(minBase, Math.floor(score / divisor));
+  if (result.won) rdmGain += winBonus;
+  if (isDaily && result.won) rdmGain += dailyBonus;
+  rdmGain = Math.min(cap, rdmGain);
   next.rdmEarned = progress.rdmEarned + rdmGain;
 
   const newBadges = evaluateBadges(next);

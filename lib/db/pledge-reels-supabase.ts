@@ -58,11 +58,13 @@ function mapDay(
 }
 
 /**
- * Load a single day's reel for a joinedDate — not the full AM/PM catalog.
+ * Load a single day's reel for a journey join + as-of calendar day.
+ * Pass App Clock `asOfDateKey` so Date traveler advances Day N content.
  */
 export async function loadEdubitePledgeReelForJoinedDate(
   slot: "am" | "pm",
   joinedDate: string,
+  asOfDateKey?: string,
 ): Promise<{
   reel: PledgeReelDay;
   dayNumber: number;
@@ -70,7 +72,11 @@ export async function loadEdubitePledgeReelForJoinedDate(
   source: "supabase" | "static";
 }> {
   const fallback = staticForSlot(slot);
-  const dayNumber = getPledgeReelDayNumber(joinedDate, fallback);
+  const dayNumber = getPledgeReelDayNumber(
+    joinedDate,
+    fallback,
+    asOfDateKey,
+  );
   const staticReel = getPledgeReelForDay(dayNumber, fallback);
 
   try {

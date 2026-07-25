@@ -1,13 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { AdminMonthlyChallengePanel } from "@/components/admin/admin-monthly-challenge-panel";
 import { AdminProfilePanel } from "@/components/admin/admin-profile-panel";
+import { AdminRdmRewardsPanel } from "@/components/admin/admin-rdm-rewards-panel";
 import { QuestionsAdminPanel } from "@/components/admin/questions-admin-panel";
 import { SchedulePreviewPanel } from "@/components/admin/schedule-preview-panel";
 import { cn } from "@/lib/utils";
 
 const TABS = [
   { id: "profile", label: "Profile" },
+  { id: "challenge", label: "Challenge" },
+  { id: "rdm", label: "RDM" },
   { id: "dailydose", label: "DailyDose" },
   { id: "funbrain", label: "FunBrain" },
   { id: "pledges", label: "AI Pledges" },
@@ -41,6 +45,8 @@ export default function AdminPage() {
       </nav>
 
       {tab === "profile" && <AdminProfilePanel />}
+      {tab === "challenge" && <AdminMonthlyChallengePanel />}
+      {tab === "rdm" && <AdminRdmRewardsPanel />}
       {tab === "dailydose" && (
         <QuestionsAdminPanel
           domain="dailydose"

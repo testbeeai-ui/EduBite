@@ -4,20 +4,145 @@ import type {
   BrainGymProgress,
 } from "@/lib/brain-gym/types";
 import {
+  mergeEnrolledMonths,
+  getMonthlyChallengeEntryStakeRdm,
+} from "@/lib/challenge/monthly";
+import {
+  listEnrollmentMonthKeysForUser,
+  upsertChallengeEnrollment,
+} from "@/lib/db/monthly-challenge";
+import {
   normalizeBrainGymProgress,
   normalizeGameState,
   normalizePuzzleProgress,
 } from "@/lib/db/normalize";
 import type { PuzzleAttempt, PuzzleProgress } from "@/lib/puzzles/types";
 import { createEdubiteSupabaseServer } from "@/lib/supabase/server";
-import type { GameState } from "@/lib/types";
+import type { DayCriteria, GameState } from "@/lib/types";
 
 export const EDUBITE_GAME_STATE_TABLE = "edubite_game_state";
 export const EDUBITE_BRAIN_GYM_TABLE = "edubite_brain_gym_progress";
 export const EDUBITE_PUZZLE_TABLE = "edubite_puzzle_progress";
 
+function mergeDayCriteria(
+  a: DayCriteria | undefined,
+  b: DayCriteria | undefined,
+): DayCriteria {
+  const completedAts = [a?.completedAt, b?.completedAt].filter(
+    (v): v is string => typeof v === "string" && v.length > 0,
+  );
+  const earliest =
+    completedAts.length > 0
+      ? completedAts.reduce((min, cur) => (cur < min ? cur : min))
+      : null;
+  const habitsDone = Array.from(
+    new Set([...(a?.habitsDone || []), ...(b?.habitsDone || [])]),
+  );
+  const merged: DayCriteria = {
+    dose: Boolean(a?.dose || b?.dose),
+    funbrain: Boolean(a?.funbrain || b?.funbrain),
+    puzzles: Boolean(a?.puzzles || b?.puzzles),
+    habits: Boolean(a?.habits || b?.habits),
+    pledges: Boolean(a?.pledges || b?.pledges),
+    completedAt: earliest,
+    pledgeAM: Boolean(a?.pledgeAM || b?.pledgeAM),
+    pledgePM: Boolean(a?.pledgePM || b?.pledgePM),
+    habitsDone,
+  };
+  if (
+    merged.dose &&
+    merged.funbrain &&
+    merged.puzzles &&
+    merged.habits &&
+    merged.pledges &&
+    !merged.completedAt
+  ) {
+    // Legacy full days without a stamp — keep null; UI still lists the day.
+    merged.completedAt = null;
+  }
+  return merged;
+}
+
+/** Union per-date criteria so stale saves cannot wipe completed QA days. */
+function mergeDayCriteriaLogs(
+  prev: GameState["dayCriteriaLog"] | undefined,
+  incoming: GameState["dayCriteriaLog"] | undefined,
+): GameState["dayCriteriaLog"] {
+  const keys = new Set([
+    ...Object.keys(prev ?? {}),
+    ...Object.keys(incoming ?? {}),
+  ]);
+  const out: GameState["dayCriteriaLog"] = {};
+  for (const key of keys) {
+    out[key] = mergeDayCriteria(prev?.[key], incoming?.[key]);
+  }
+  return out;
+}
+
+function mergeDoseDayLogs(
+  prev: GameState["doseDayLog"] | undefined,
+  incoming: GameState["doseDayLog"] | undefined,
+): GameState["doseDayLog"] {
+  const keys = new Set([
+    ...Object.keys(prev ?? {}),
+    ...Object.keys(incoming ?? {}),
+  ]);
+  const out: GameState["doseDayLog"] = {};
+  for (const key of keys) {
+    const a = prev?.[key];
+    const b = incoming?.[key];
+    if (!a) {
+      if (b) out[key] = b;
+      continue;
+    }
+    if (!b) {
+      out[key] = a;
+      continue;
+    }
+    out[key] = a.pct >= b.pct ? a : b;
+  }
+  return out;
+}
+
 async function sb(): Promise<SupabaseClient> {
   return createEdubiteSupabaseServer();
+}
+
+/** Merge roster enrollments into game state so a paid month stays open. */
+async function withRosterEnrollmentSync(
+  userId: string,
+  state: GameState,
+): Promise<GameState> {
+  try {
+    const rosterMonths = await listEnrollmentMonthKeysForUser(userId);
+    if (rosterMonths.length === 0 && state.challengeEnrolledMonths.length === 0) {
+      return state;
+    }
+    const months = mergeEnrolledMonths(
+      state.challengeEnrolledMonths,
+      state.challengeEnrolledMonthKey,
+      rosterMonths,
+    );
+    if (
+      months.length === state.challengeEnrolledMonths.length &&
+      months.every((m, i) => m === state.challengeEnrolledMonths[i])
+    ) {
+      return state;
+    }
+    return {
+      ...state,
+      challengeEnrolledMonths: months,
+      // Keep legacy single key if still valid; else latest roster month.
+      challengeEnrolledMonthKey:
+        state.challengeEnrolledMonthKey &&
+        months.includes(state.challengeEnrolledMonthKey)
+          ? state.challengeEnrolledMonthKey
+          : (months[months.length - 1] ?? null),
+    };
+  } catch (err) {
+    console.error("[progress] roster enroll sync", err);
+    return state;
+  }
 }
 
 export async function readNormalizedGameState(
@@ -31,7 +156,8 @@ export async function readNormalizedGameState(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data?.payload) return null;
-  return normalizeGameState(data.payload as unknown);
+  const normalized = normalizeGameState(data.payload as unknown);
+  return withRosterEnrollmentSync(userId, normalized);
 }
 
 export async function writeNormalizedGameState(
@@ -48,12 +174,88 @@ export async function writeNormalizedGameState(
   if (readError) throw new Error(readError.message);
 
   let normalized = incoming;
+  let prevForEnroll: GameState | null = null;
   if (existingRow?.payload) {
     try {
       const prev = normalizeGameState(existingRow.payload as unknown);
+      prevForEnroll = prev;
+      const months = mergeEnrolledMonths(
+        incoming.challengeEnrolledMonths,
+        prev.challengeEnrolledMonths,
+        incoming.challengeEnrolledMonthKey,
+        prev.challengeEnrolledMonthKey,
+      );
+      const enrolledKey =
+        incoming.challengeEnrolledMonthKey ??
+        prev.challengeEnrolledMonthKey ??
+        (months.length > 0 ? months[months.length - 1]! : null);
+      const prevEnrolled =
+        Boolean(enrolledKey) &&
+        (prev.challengeEnrolledMonthKey === enrolledKey ||
+          prev.challengeEnrolledMonths.includes(enrolledKey!));
+      const incomingEnrolled =
+        Boolean(enrolledKey) &&
+        (incoming.challengeEnrolledMonthKey === enrolledKey ||
+          incoming.challengeEnrolledMonths.includes(enrolledKey!));
+      const stakeAmt = getMonthlyChallengeEntryStakeRdm();
+      const newlyEnrolledMonth = months.some(
+        (m) =>
+          incoming.challengeEnrolledMonths.includes(m) &&
+          !prev.challengeEnrolledMonths.includes(m) &&
+          m !== prev.challengeEnrolledMonthKey,
+      );
+
+      // Stake must stick. Stale client saves must not Math.max RDM back up
+      // and undo the entry fee after enroll.
+      let rdm = Math.max(incoming.rdm, prev.rdm);
+      if (enrolledKey || newlyEnrolledMonth) {
+        if ((incomingEnrolled && !prevEnrolled) || newlyEnrolledMonth) {
+          rdm = incoming.rdm;
+        } else if (!incomingEnrolled && prevEnrolled) {
+          rdm = prev.rdm;
+        } else if (incomingEnrolled && prevEnrolled) {
+          const creditedDelta =
+            Math.max(0, incoming.doseRdmCredited - prev.doseRdmCredited) +
+            Math.max(
+              0,
+              incoming.funbrainRdmCredited - prev.funbrainRdmCredited,
+            );
+          if (
+            incoming.rdm > prev.rdm &&
+            incoming.rdm - prev.rdm >= stakeAmt &&
+            creditedDelta < stakeAmt
+          ) {
+            // Stale pre-stake snapshot after a successful deduct.
+            rdm = prev.rdm;
+          } else if (
+            prev.rdm > incoming.rdm &&
+            prev.rdm - incoming.rdm >= stakeAmt &&
+            creditedDelta < stakeAmt
+          ) {
+            rdm = incoming.rdm;
+          } else {
+            rdm = Math.max(incoming.rdm, prev.rdm);
+          }
+        }
+      }
+
       normalized = {
         ...incoming,
-        rdm: Math.max(incoming.rdm, prev.rdm),
+        rdm,
+        challengeEnrolledMonthKey: enrolledKey,
+        challengeEnrolledMonths: months,
+        challengePuzzleSubmittedMonthKey:
+          incoming.challengePuzzleSubmittedMonthKey ??
+          prev.challengePuzzleSubmittedMonthKey,
+        dayCriteriaLog: mergeDayCriteriaLogs(
+          prev.dayCriteriaLog,
+          incoming.dayCriteriaLog,
+        ),
+        doseDayLog: mergeDoseDayLogs(prev.doseDayLog, incoming.doseDayLog),
+        history:
+          incoming.history.length >= prev.history.length
+            ? incoming.history
+            : prev.history,
         funbrain: {
           ...incoming.funbrain,
           highScore: Math.max(
@@ -77,6 +279,29 @@ export async function writeNormalizedGameState(
               ? Math.max(incoming.funbrain.score, prev.funbrain.score)
               : incoming.funbrain.score,
         },
+        dose: {
+          ...incoming.dose,
+          completed:
+            incoming.lastActiveDate === prev.lastActiveDate
+              ? incoming.dose.completed || prev.dose.completed
+              : incoming.dose.completed,
+          completed11:
+            incoming.lastActiveDate === prev.lastActiveDate
+              ? incoming.dose.completed11 || prev.dose.completed11
+              : incoming.dose.completed11,
+          completed12:
+            incoming.lastActiveDate === prev.lastActiveDate
+              ? incoming.dose.completed12 || prev.dose.completed12
+              : incoming.dose.completed12,
+        },
+        pledgeAM:
+          incoming.lastActiveDate === prev.lastActiveDate
+            ? incoming.pledgeAM || prev.pledgeAM
+            : incoming.pledgeAM,
+        pledgePM:
+          incoming.lastActiveDate === prev.lastActiveDate
+            ? incoming.pledgePM || prev.pledgePM
+            : incoming.pledgePM,
         doseRdmCredited: Math.max(
           incoming.doseRdmCredited,
           prev.doseRdmCredited,
@@ -104,6 +329,28 @@ export async function writeNormalizedGameState(
     { onConflict: "user_id" },
   );
   if (error) throw new Error(error.message);
+
+  // Roster sync only when enrollment months actually change — not on every save.
+  const enrollKey = normalized.challengeEnrolledMonthKey;
+  if (enrollKey) {
+    const prevMonths = prevForEnroll?.challengeEnrolledMonths ?? [];
+    const monthsGrew = normalized.challengeEnrolledMonths.some(
+      (m) => !prevMonths.includes(m),
+    );
+    const keyChanged =
+      !prevForEnroll ||
+      prevForEnroll.challengeEnrolledMonthKey !== enrollKey;
+    if (!prevForEnroll || monthsGrew || keyChanged) {
+      void upsertChallengeEnrollment({
+        userId,
+        monthKey: enrollKey,
+        displayName: "Learner",
+        stakeRdm: getMonthlyChallengeEntryStakeRdm(),
+        overwrite: false,
+      });
+    }
+  }
+
   return normalized;
 }
 

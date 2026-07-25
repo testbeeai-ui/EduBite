@@ -1,4 +1,5 @@
-import { FUNBRAIN_DURATION_SEC, RDM_PER_DOSE_CORRECT, DOSE_QUESTION_COUNT } from "@/data/config";
+import { FUNBRAIN_DURATION_SEC, DOSE_DURATION_SEC, DOSE_QUESTION_COUNT } from "@/data/config";
+import { getLiveRdmAmount } from "@/lib/rdm/live-amounts";
 import { HABIT_DEFINITIONS } from "@/data/habits";
 import { GAMES } from "@/data/brain-gym/registry";
 import { pickWithSeed } from "@/lib/brain-gym/utils/shuffle";
@@ -106,6 +107,8 @@ function normalizeDose(raw: unknown): DoseState {
       locked: false,
       correct: 0,
       completed: false,
+      running: false,
+      timeLeft: DOSE_DURATION_SEC,
       index11: 0,
       locked11: false,
       correct11: 0,
@@ -146,6 +149,8 @@ function normalizeDose(raw: unknown): DoseState {
     locked,
     correct,
     completed,
+    running: false,
+    timeLeft: DOSE_DURATION_SEC,
     index11,
     locked11,
     correct11,
@@ -221,6 +226,10 @@ function normalizeHistory(raw: unknown): DayCriteria[] {
       puzzles: asBoolean(item.puzzles, false),
       habits: asBoolean(item.habits, false),
       pledges: asBoolean(item.pledges, false),
+      completedAt:
+        typeof item.completedAt === "string" && item.completedAt.length >= 10
+          ? item.completedAt
+          : null,
     }))
     .slice(-27);
 }
@@ -237,7 +246,9 @@ export function normalizeGameState(raw: unknown): GameState {
     Object.keys(raw).length <= 2 && "score" in raw && !("rdm" in raw);
   if (looksLikeLegacyScoreOnly) return base;
   const dose = normalizeDose(raw.dose);
-  const defaultDoseCredit = dose.completed ? dose.correct * RDM_PER_DOSE_CORRECT : 0;
+  const defaultDoseCredit = dose.completed
+    ? dose.correct * getLiveRdmAmount("dose.per_correct")
+    : 0;
   let funbrain = normalizeFunbrain(raw.funbrain);
   const funbrainRdmCredited = Math.max(
     0,
@@ -278,17 +289,42 @@ export function normalizeGameState(raw: unknown): GameState {
     funbrainRdmCredited,
     puzzleCompleted: asBoolean(raw.puzzleCompleted, false),
     doseDayLog: normalizeDoseDayLog(raw.doseDayLog),
+    dayCriteriaLog: normalizeDayCriteriaLog(raw.dayCriteriaLog),
     challengeEnrolledMonthKey:
       typeof raw.challengeEnrolledMonthKey === "string" &&
       /^\d{4}-\d{2}$/.test(raw.challengeEnrolledMonthKey)
         ? raw.challengeEnrolledMonthKey
         : null,
+    challengeEnrolledMonths: normalizeEnrolledMonths(
+      raw.challengeEnrolledMonths,
+      raw.challengeEnrolledMonthKey,
+    ),
     challengePuzzleSubmittedMonthKey:
       typeof raw.challengePuzzleSubmittedMonthKey === "string" &&
       /^\d{4}-\d{2}$/.test(raw.challengePuzzleSubmittedMonthKey)
         ? raw.challengePuzzleSubmittedMonthKey
         : null,
   };
+}
+
+function normalizeEnrolledMonths(
+  raw: unknown,
+  legacyKey: unknown,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (key: unknown) => {
+    if (typeof key !== "string" || !/^\d{4}-\d{2}$/.test(key) || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    out.push(key);
+  };
+  if (Array.isArray(raw)) {
+    for (const item of raw) push(item);
+  }
+  push(legacyKey);
+  return out.sort();
 }
 
 function normalizeDoseDayLog(raw: unknown): GameState["doseDayLog"] {
@@ -308,6 +344,35 @@ function normalizeDoseDayLog(raw: unknown): GameState["doseDayLog"] {
       pct: Math.round((100 * correct) / total),
       completed: asBoolean(value.completed, true),
       classLevel,
+    };
+  }
+  return out;
+}
+
+function normalizeDayCriteriaLog(raw: unknown): GameState["dayCriteriaLog"] {
+  if (!isRecord(raw)) return {};
+  const out: GameState["dayCriteriaLog"] = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !isRecord(value)) continue;
+    const completedAt =
+      typeof value.completedAt === "string" &&
+      value.completedAt.length >= 10
+        ? value.completedAt
+        : null;
+    const pledges = asBoolean(value.pledges, false);
+    const habits = asBoolean(value.habits, false);
+    out[key] = {
+      dose: asBoolean(value.dose, false),
+      funbrain: asBoolean(value.funbrain, false),
+      puzzles: asBoolean(value.puzzles, false),
+      habits,
+      pledges,
+      completedAt,
+      pledgeAM: asBoolean(value.pledgeAM, pledges),
+      pledgePM: asBoolean(value.pledgePM, pledges),
+      habitsDone: Array.isArray(value.habitsDone)
+        ? value.habitsDone.filter((item): item is string => typeof item === "string")
+        : (habits ? HABIT_DEFINITIONS.map((h) => h.id) : []),
     };
   }
   return out;

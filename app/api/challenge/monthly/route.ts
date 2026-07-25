@@ -5,6 +5,7 @@ import { getRequestUser } from "@/lib/auth/server";
 import {
   buildChallengeProgress,
   getChallengeMonthMeta,
+  isEnrolledForChallengeMonth,
   MONTHLY_CHALLENGE_STREAK_REQUIRED,
   MONTHLY_CHALLENGE_WINNER_SLOTS,
 } from "@/lib/challenge/monthly";
@@ -12,6 +13,7 @@ import { readNormalizedGameState } from "@/lib/db/supabase-progress";
 import { createEdubiteSupabaseServer } from "@/lib/supabase/server";
 import { realTodayKey } from "@/lib/utils";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const TABLE = "edubite_monthly_challenge_entries";
@@ -190,18 +192,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No progress found" }, { status: 400 });
     }
 
-    if (gameState.challengeEnrolledMonthKey !== monthKey) {
+    if (
+      !isEnrolledForChallengeMonth(
+        monthKey,
+        gameState.challengeEnrolledMonthKey,
+        gameState.challengeEnrolledMonths,
+      )
+    ) {
       return NextResponse.json(
         { error: "You must enroll in this month's challenge first" },
         { status: 403 },
       );
     }
 
-    const progress = buildChallengeProgress(gameState.doseDayLog, dateKey);
+    const progress = buildChallengeProgress(gameState, dateKey);
     if (!progress.eligibleForPuzzle) {
       return NextResponse.json(
         {
-          error: `Need a ${MONTHLY_CHALLENGE_STREAK_REQUIRED}-day Daily Dose streak at 80%+ to enter the final puzzle`,
+          error: `Need a ${MONTHLY_CHALLENGE_STREAK_REQUIRED}-day full journey streak (complete all 5 daily tasks) to enter the final puzzle`,
         },
         { status: 403 },
       );

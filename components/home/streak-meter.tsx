@@ -1,16 +1,19 @@
 "use client";
 
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import {
   buildJourneyHeatmap,
   buildJourneyWeek,
   countFullJourneyDays,
   criteriaCount,
+  effectiveJourneyJoinDate,
   isFullDay,
 } from "@/lib/gamification";
+import { useAppClock } from "@/lib/clock/app-clock";
 import { useGame } from "@/lib/store/game-provider";
 import type { DayCriteria, JourneyDay } from "@/lib/types";
-import { cn, formatShortDate, parseDateKey, todayKey } from "@/lib/utils";
+import { cn, daysBetween, formatShortDate, parseDateKey } from "@/lib/utils";
 
 const DAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
@@ -234,9 +237,17 @@ function SectionShell({
 
 export function StreakMeter() {
   const { state } = useGame();
-  const joinDate = state.joinedDate ?? todayKey();
-  const week = buildJourneyWeek(state);
-  const heat = buildJourneyHeatmap(state);
+  const { todayKey: clockToday, isOverridden } = useAppClock();
+  const storedJoin = state.joinedDate ?? clockToday;
+  const joinDate = effectiveJourneyJoinDate(state, clockToday);
+  const week = useMemo(
+    () => buildJourneyWeek(state, clockToday),
+    [state, clockToday],
+  );
+  const heat = useMemo(
+    () => buildJourneyHeatmap(state, 28, clockToday),
+    [state, clockToday],
+  );
 
   const fullDays7 = countFullJourneyDays(
     week.filter((d) => d.status !== "upcoming"),
@@ -244,7 +255,12 @@ export function StreakMeter() {
   const fullDays28 = countFullJourneyDays(
     heat.filter((d) => d.status !== "upcoming"),
   );
-  const daysSinceJoin = week.find((d) => d.status === "today")?.dayNumber ?? 1;
+  const todayCard = week.find((d) => d.status === "today");
+  const daysSinceJoin = Math.max(
+    0,
+    todayCard?.dayNumber ?? daysBetween(joinDate, clockToday) + 1,
+  );
+  const qaBeforeRealJoin = isOverridden && clockToday < storedJoin;
 
   const legend = [
     { color: "bg-teal-400", label: "Daily Dose" },
@@ -256,6 +272,17 @@ export function StreakMeter() {
 
   return (
     <div className="space-y-4 sm:space-y-5">
+      {isOverridden ? (
+        <p className="m-0 text-[11px] font-mono text-amber-300/90 px-1 leading-relaxed">
+          Admin date active: {formatShortDate(clockToday)}
+          {todayCard ? ` — Day ${todayCard.dayNumber} is Today` : ""}
+          {qaBeforeRealJoin
+            ? ` (QA mode: before real join ${formatShortDate(storedJoin)}; journey starts at this date so completions can show)`
+            : ""}
+          . Finish all 5 dots on Today to mark the day Done.
+        </p>
+      ) : null}
+
       {/* Top Streak Stats Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-3">

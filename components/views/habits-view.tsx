@@ -3,19 +3,33 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { HabitRow, HabitsProgressHero } from "@/components/habits/habit-row";
 import { ViewHeader } from "@/components/ui/modal";
+import { HABIT_ID_TO_RDM_KEY } from "@/data/rdm-rewards";
+import { useRdmRewards } from "@/lib/rdm/rdm-rewards-provider";
 import { useGame } from "@/lib/store/game-provider";
 
 export function HabitsView() {
   const { state, toggleHabit } = useGame();
+  const { getAmount } = useRdmRewards();
   const done = state.habits.filter((habit) => habit.done).length;
   const total = state.habits.length;
+  const habitsWithLiveRdm = useMemo(
+    () =>
+      state.habits.map((habit) => {
+        const key = HABIT_ID_TO_RDM_KEY[habit.id];
+        return {
+          ...habit,
+          rdm: key ? getAmount(key) : habit.rdm,
+        };
+      }),
+    [state.habits, getAmount],
+  );
   const rdmEarned = useMemo(
     () =>
-      state.habits.reduce(
+      habitsWithLiveRdm.reduce(
         (sum, habit) => sum + (habit.done ? habit.rdm : 0),
         0,
       ),
-    [state.habits],
+    [habitsWithLiveRdm],
   );
   const [openInfoId, setOpenInfoId] = useState<string | null>(null);
   const [pulseRdm, setPulseRdm] = useState(false);
@@ -57,7 +71,7 @@ export function HabitsView() {
         />
 
         <div className="flex flex-col">
-          {state.habits.map((habit) => (
+          {habitsWithLiveRdm.map((habit) => (
             <HabitRow
               key={habit.id}
               habit={habit}

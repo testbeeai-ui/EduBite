@@ -2,24 +2,29 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { RDM_PER_DOSE_CORRECT, EDUBLAST_URL } from "@/data/config";
+import { EDUBLAST_URL, DOSE_DURATION_SEC } from "@/data/config";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { ViewHeader } from "@/components/ui/modal";
 import { useTodayContent } from "@/lib/content/use-today-content";
+import { useRdmRewards } from "@/lib/rdm/rdm-rewards-provider";
 import { useGame } from "@/lib/store/game-provider";
-import { cn } from "@/lib/utils";
+import { cn, formatTime } from "@/lib/utils";
 
 export function DailyDoseView() {
-  const { state, answerDose, nextDose, resetDose, selectDoseClass } = useGame();
+  const { state, answerDose, nextDose, resetDose, startDose, selectDoseClass } =
+    useGame();
   const content = useTodayContent();
+  const { getAmount } = useRdmRewards();
+  const rdmPerCorrect = getAmount("dose.per_correct");
   const [selected, setSelected] = useState<number | null>(null);
-  
+
   const dose = state.dose;
   const currentClass = dose.currentClass || "11";
   const questions =
     currentClass === "12" ? content.dailydose12 : content.dailydose11;
+  const doseMinutes = Math.round(DOSE_DURATION_SEC / 60);
 
   // Wait for Supabase (or fallback) — never flash static day-1 banks while loading.
   if (content.loading) {
@@ -32,7 +37,7 @@ export function DailyDoseView() {
               <span>DailyDose</span>
             </div>
           }
-          subtitle="Five bite-sized questions, one concept at a time. The non-negotiable daily trigger."
+          subtitle={`${doseMinutes}-minute timer · five bite-sized questions, one concept at a time.`}
         />
         <Card className="text-center py-10 text-sm text-[var(--text-dim)]">
           Loading today&apos;s questions…
@@ -45,12 +50,15 @@ export function DailyDoseView() {
     <div className="inline-flex p-1 bg-slate-900/90 border border-white/[0.12] rounded-full text-xs font-mono select-none pointer-events-auto ml-5 shrink-0 align-middle shadow-lg">
       <button
         type="button"
+        disabled={dose.running}
         onClick={() => {
+          if (dose.running) return;
           selectDoseClass("11");
           setSelected(null);
         }}
         className={cn(
-          "relative px-5 py-2 rounded-full font-display font-black tracking-wide transition-colors cursor-pointer text-xs",
+          "relative px-5 py-2 rounded-full font-display font-black tracking-wide transition-colors text-xs",
+          dose.running ? "cursor-not-allowed opacity-50" : "cursor-pointer",
           currentClass === "11" ? "text-white font-black" : "text-slate-300 hover:text-white"
         )}
       >
@@ -65,12 +73,15 @@ export function DailyDoseView() {
       </button>
       <button
         type="button"
+        disabled={dose.running}
         onClick={() => {
+          if (dose.running) return;
           selectDoseClass("12");
           setSelected(null);
         }}
         className={cn(
-          "relative px-5 py-2 rounded-full font-display font-black tracking-wide transition-colors cursor-pointer text-xs",
+          "relative px-5 py-2 rounded-full font-display font-black tracking-wide transition-colors text-xs",
+          dose.running ? "cursor-not-allowed opacity-50" : "cursor-pointer",
           currentClass === "12" ? "text-white font-black" : "text-slate-300 hover:text-white"
         )}
       >
@@ -94,15 +105,20 @@ export function DailyDoseView() {
   );
 
   if (dose.completed) {
-    const earned = dose.correct * RDM_PER_DOSE_CORRECT;
+    const earned = dose.correct * rdmPerCorrect;
     const userAnswers = currentClass === "12" ? (dose.answers12 || []) : (dose.answers11 || []);
+    const timedOut = dose.timeLeft <= 0 && userAnswers.length < questions.length;
 
     return (
       <div className="space-y-6 pb-8">
         <ViewHeader
           eyebrow="Function 01"
           title={headerTitle}
-          subtitle="Five bite-sized questions, one concept at a time. The non-negotiable daily trigger."
+          subtitle={
+            timedOut
+              ? "Time’s up — DailyDose ended. Unanswered questions count as skipped."
+              : `${doseMinutes}-minute DailyDose complete.`
+          }
         />
         <Card className="text-center py-8 px-5 border border-white/[0.04]">
           <div className="font-display font-extrabold text-[30px] text-teal">
@@ -125,7 +141,14 @@ export function DailyDoseView() {
             .
           </p>
           <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Button variant="ghost" onClick={resetDose}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setSelected(null);
+                resetDose();
+                startDose();
+              }}
+            >
               Replay DailyDose
             </Button>
             <Button
@@ -158,7 +181,7 @@ export function DailyDoseView() {
                     </span>
                     {selectedIdx === undefined || selectedIdx === null ? (
                       <span className="px-2 py-0.5 rounded-full text-[9px] font-mono uppercase tracking-wider bg-slate-800 text-slate-400 border border-white/[0.04]">
-                        No Record
+                        Unanswered
                       </span>
                     ) : isCorrect ? (
                       <span className="px-2 py-0.5 rounded-full text-[9px] font-mono uppercase tracking-wider bg-teal/10 text-teal border border-teal/20">
@@ -217,6 +240,39 @@ export function DailyDoseView() {
     );
   }
 
+  if (!dose.running) {
+    return (
+      <div>
+        <ViewHeader
+          eyebrow="Function 01"
+          title={headerTitle}
+          subtitle={`${doseMinutes}-minute timer · five bite-sized questions, one concept at a time.`}
+        />
+        <Card className="text-center py-[50px] px-5">
+          <h2 className="font-display font-bold text-[22px]">DailyDose</h2>
+          <p className="text-[var(--text-dim)] text-sm mt-2">
+            {doseMinutes}-minute timer · {questions.length || 5} questions · Class{" "}
+            {currentClass}
+          </p>
+          <p className="text-[var(--text-dim)] text-xs mt-3 max-w-sm mx-auto leading-relaxed">
+            When the timer hits zero, the exam stops. Replay anytime — RDM is
+            credited once per day.
+          </p>
+          <Button
+            className="mt-8"
+            onClick={() => {
+              setSelected(null);
+              startDose();
+            }}
+            disabled={questions.length === 0}
+          >
+            Start DailyDose →
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
   const q = questions[dose.index];
   if (!q) {
     return (
@@ -234,9 +290,10 @@ export function DailyDoseView() {
   }
 
   const progress = (dose.index / questions.length) * 100;
+  const timerUrgent = dose.timeLeft <= 30;
 
   const handleAnswer = (i: number) => {
-    if (dose.locked) return;
+    if (dose.locked || !dose.running) return;
     setSelected(i);
     answerDose(i, q.correct);
   };
@@ -249,7 +306,7 @@ export function DailyDoseView() {
   const feedback =
     dose.locked && selected !== null
       ? selected === q.correct
-        ? { text: "Correct! +45 RDM", color: "text-teal" }
+        ? { text: `Correct! +${rdmPerCorrect} RDM`, color: "text-teal" }
         : { text: "Not quite — review and move on.", color: "text-pink" }
       : null;
 
@@ -258,7 +315,7 @@ export function DailyDoseView() {
       <ViewHeader
         eyebrow="Function 01"
         title={headerTitle}
-        subtitle="Five bite-sized questions, one concept at a time. The non-negotiable daily trigger."
+        subtitle="DailyDose in progress — finish before the timer ends."
       />
       <Card key={`dose-${currentClass}-${dose.index}`}>
         <div className="flex items-center gap-3.5 mb-5">
@@ -266,6 +323,17 @@ export function DailyDoseView() {
             {dose.index + 1}/{questions.length}
           </span>
           <ProgressBar value={progress} className="flex-1 h-2" />
+          <motion.div
+            key={dose.timeLeft}
+            initial={{ scale: 1.08 }}
+            animate={{ scale: 1 }}
+            className={cn(
+              "font-mono font-bold text-xl tabular-nums shrink-0",
+              timerUrgent ? "text-pink" : "text-teal",
+            )}
+          >
+            {formatTime(dose.timeLeft)}
+          </motion.div>
         </div>
         {q.tag ? (
           <div className="font-mono text-[11px] text-teal tracking-wide">{q.tag}</div>

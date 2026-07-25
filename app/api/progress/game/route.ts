@@ -11,6 +11,7 @@ import {
 } from "@/lib/db/supabase-progress";
 import type { GameState } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {

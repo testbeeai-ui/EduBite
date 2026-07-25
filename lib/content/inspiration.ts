@@ -207,8 +207,10 @@ async function loadCatalogs(): Promise<CatalogCache> {
  * Inspiration of the day — slim payload only.
  * Catalogs load at most once per hour per server instance; day payload cached 5 min.
  */
-export async function loadInspiration(): Promise<InspirationPayload> {
-  const dateKey = todayKey();
+export async function loadInspiration(
+  requestedDateKey?: string | null,
+): Promise<InspirationPayload> {
+  const dateKey = requestedDateKey ?? todayKey();
   const now = Date.now();
   if (
     dayCache &&

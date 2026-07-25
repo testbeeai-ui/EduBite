@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Baloo_2, Inter, JetBrains_Mono } from "next/font/google";
 import { AuthProvider } from "@/lib/auth/auth-provider";
 import { AppClockProvider } from "@/lib/clock/app-clock";
+import { RdmRewardsProvider } from "@/lib/rdm/rdm-rewards-provider";
 import { GameProvider } from "@/lib/store/game-provider";
 import "./globals.css";
 
@@ -39,17 +40,22 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
         <link rel="stylesheet" href={TABLER_ICONS_HREF} />
       </head>
       <body
         className={`${baloo.variable} ${inter.variable} ${jetbrains.variable} antialiased`}
         suppressHydrationWarning
       >
-        <AuthProvider>
-          <AppClockProvider>
-            <GameProvider>{children}</GameProvider>
-          </AppClockProvider>
-        </AuthProvider>
+        <div id="edubite-root">
+          <AuthProvider>
+            <AppClockProvider>
+              <RdmRewardsProvider>
+                <GameProvider>{children}</GameProvider>
+              </RdmRewardsProvider>
+            </AppClockProvider>
+          </AuthProvider>
+        </div>
       </body>
     </html>
   );
