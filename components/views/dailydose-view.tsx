@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { EDUBLAST_URL, DOSE_DURATION_SEC } from "@/data/config";
+import { DOSE_DURATION_SEC, EDUBLAST_URL } from "@/data/config";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ProgressBar } from "@/components/ui/progress-bar";
@@ -21,6 +21,7 @@ export function DailyDoseView() {
   const [selected, setSelected] = useState<number | null>(null);
 
   const dose = state.dose;
+  const classChosen = Boolean(dose.classChosen);
   const currentClass = dose.currentClass || "11";
   const questions =
     currentClass === "12" ? content.dailydose12 : content.dailydose11;
@@ -46,8 +47,65 @@ export function DailyDoseView() {
     );
   }
 
+  // First visit: mandatory class pick before any DailyDose content.
+  if (!classChosen) {
+    return (
+      <div>
+        <ViewHeader
+          eyebrow="Function 01"
+          title="DailyDose"
+          subtitle="Choose your class once — we’ll remember it. You can switch anytime from the toggle."
+        />
+        <Card className="mx-auto max-w-lg px-5 py-10 text-center">
+          <h2 className="font-display text-[22px] font-bold text-[var(--text)]">
+            Which class are you in?
+          </h2>
+          <p className="mx-auto mt-2 max-w-sm text-sm text-[var(--text-dim)] leading-relaxed">
+            Pick Class 11th or Class 12th to load the right PCM questions. This
+            choice is saved to your account.
+          </p>
+          <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => {
+                selectDoseClass("11");
+                setSelected(null);
+              }}
+              className="rounded-2xl border border-teal/35 bg-teal/10 px-4 py-6 text-left transition-colors hover:border-teal hover:bg-teal/15"
+            >
+              <div className="font-display text-lg font-bold text-teal">
+                Class 11th
+              </div>
+              <div className="mt-1 text-xs text-[var(--text-dim)]">
+                PCM · Class XI bank
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                selectDoseClass("12");
+                setSelected(null);
+              }}
+              className="rounded-2xl border border-blue/35 bg-blue/10 px-4 py-6 text-left transition-colors hover:border-blue hover:bg-blue/15"
+            >
+              <div className="font-display text-lg font-bold text-blue">
+                Class 12th
+              </div>
+              <div className="mt-1 text-xs text-[var(--text-dim)]">
+                PCM · Class XII bank
+              </div>
+            </button>
+          </div>
+          <p className="mt-5 text-[11px] text-[var(--text-dim)]">
+            Required once · switch later with Class 11th / 12th toggle
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
   const toggleSelector = (
-    <div className="inline-flex p-1 bg-slate-900/90 border border-white/[0.12] rounded-full text-xs font-mono select-none pointer-events-auto ml-5 shrink-0 align-middle shadow-lg">
+    <div className="inline-flex p-0.5 ml-5 shrink-0 align-middle select-none pointer-events-auto rounded-full border border-white/15 bg-slate-950/70 text-xs font-mono shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]">
       <button
         type="button"
         disabled={dose.running}
@@ -57,15 +115,17 @@ export function DailyDoseView() {
           setSelected(null);
         }}
         className={cn(
-          "relative px-5 py-2 rounded-full font-display font-black tracking-wide transition-colors text-xs",
+          "relative px-4 py-1.5 rounded-full font-display font-bold tracking-wide transition-colors text-xs",
           dose.running ? "cursor-not-allowed opacity-50" : "cursor-pointer",
-          currentClass === "11" ? "text-white font-black" : "text-slate-300 hover:text-white"
+          currentClass === "11"
+            ? "text-white"
+            : "text-slate-400 hover:text-slate-200",
         )}
       >
         {currentClass === "11" && (
           <motion.div
             layoutId="activeClassDose"
-            className="absolute inset-0 bg-gradient-to-r from-teal-500 to-emerald-600 rounded-full -z-10 shadow-[0_2px_10px_rgba(45,212,191,0.3)]"
+            className="absolute inset-0 -z-10 rounded-full border border-teal/40 bg-teal/20"
             transition={{ type: "spring", stiffness: 300, damping: 25 }}
           />
         )}
@@ -80,15 +140,17 @@ export function DailyDoseView() {
           setSelected(null);
         }}
         className={cn(
-          "relative px-5 py-2 rounded-full font-display font-black tracking-wide transition-colors text-xs",
+          "relative px-4 py-1.5 rounded-full font-display font-bold tracking-wide transition-colors text-xs",
           dose.running ? "cursor-not-allowed opacity-50" : "cursor-pointer",
-          currentClass === "12" ? "text-white font-black" : "text-slate-300 hover:text-white"
+          currentClass === "12"
+            ? "text-white"
+            : "text-slate-400 hover:text-slate-200",
         )}
       >
         {currentClass === "12" && (
           <motion.div
             layoutId="activeClassDose"
-            className="absolute inset-0 bg-gradient-to-r from-teal-500 to-emerald-600 rounded-full -z-10 shadow-[0_2px_10px_rgba(45,212,191,0.3)]"
+            className="absolute inset-0 -z-10 rounded-full border border-teal/40 bg-teal/20"
             transition={{ type: "spring", stiffness: 300, damping: 25 }}
           />
         )}

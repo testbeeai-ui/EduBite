@@ -154,10 +154,12 @@ function PledgeCard({
         </Button>
       ) : (
         <div className="flex flex-col gap-2 mt-4">
-          <div className="font-mono text-[11px] text-teal">✓ Signed for today</div>
           <Button variant={type} block onClick={onWatchReel}>
             Watch today&apos;s reel →
           </Button>
+          <div className="font-mono text-[11px] text-teal flex items-center gap-1">
+            ✓ Signed for today
+          </div>
         </div>
       )}
     </Card>

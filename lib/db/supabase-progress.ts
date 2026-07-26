@@ -293,6 +293,15 @@ export async function writeNormalizedGameState(
             incoming.lastActiveDate === prev.lastActiveDate
               ? incoming.dose.completed12 || prev.dose.completed12
               : incoming.dose.completed12,
+          // Never drop a remembered class pick on a raced older save.
+          classChosen: Boolean(
+            incoming.dose.classChosen || prev.dose.classChosen,
+          ),
+          currentClass: incoming.dose.classChosen
+            ? incoming.dose.currentClass
+            : prev.dose.classChosen
+              ? prev.dose.currentClass
+              : incoming.dose.currentClass,
         },
         pledgeAM:
           incoming.lastActiveDate === prev.lastActiveDate

@@ -29,6 +29,7 @@ import {
   isFullDay,
   mergeDayCriteriaRecord,
   repairDayCriteriaLogFromSources,
+  repairJoinedDateFromActivity,
   todayCriteria,
 } from "@/lib/gamification";
 import {
@@ -46,6 +47,7 @@ import { useAppClock } from "@/lib/clock/app-clock";
 import { toPersistableGameState } from "@/lib/persistence/persistable-game-state";
 import { createSaveQueue } from "@/lib/persistence/save-queue";
 import { loadPuzzleProgress } from "@/lib/puzzles/storage";
+import { normalizeGameState } from "@/lib/db/normalize";
 import { storageAdapter } from "@/lib/storage";
 import type {
   AppView,
@@ -99,17 +101,18 @@ type GameAction =
 
 function withDerived(state: GameState): GameState {
   const today = todayKey();
-  const live = todayCriteria(state);
-  const prevDay = state.dayCriteriaLog?.[today];
+  const repairedJoin = repairJoinedDateFromActivity(state);
+  const live = todayCriteria(repairedJoin);
+  const prevDay = repairedJoin.dayCriteriaLog?.[today];
   // Always record under App Clock today once lastActiveDate matches (caller rolls first).
   const dayCriteriaLog =
-    state.lastActiveDate === today
+    repairedJoin.lastActiveDate === today
       ? {
-          ...(state.dayCriteriaLog ?? {}),
+          ...(repairedJoin.dayCriteriaLog ?? {}),
           [today]: mergeDayCriteriaRecord(prevDay, live),
         }
-      : (state.dayCriteriaLog ?? {});
-  const next = { ...state, dayCriteriaLog };
+      : (repairedJoin.dayCriteriaLog ?? {});
+  const next = { ...repairedJoin, dayCriteriaLog };
   const streak = computeStreak(next, today);
   return { ...next, streak };
 }
@@ -193,6 +196,7 @@ function rollDayIfNeeded(state: GameState): GameState {
       correct12: 0,
       completed12: false,
       currentClass: state.dose?.currentClass || "11",
+      classChosen: Boolean(state.dose?.classChosen),
       answers11: [],
       answers12: [],
     },
@@ -330,6 +334,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
     case "START_DOSE": {
       if (state.dose.completed || state.dose.running) return state;
+      if (!state.dose.classChosen) return state;
       return {
         ...state,
         dose: {
@@ -460,6 +465,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           correct12,
           completed12,
           currentClass: targetClass,
+          classChosen: true,
           answers11: d.answers11 || [],
           answers12: d.answers12 || [],
         }
@@ -806,15 +812,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
   const saveQueueRef = useRef(
-    createSaveQueue<GameState>(async (next) => {
-      const userId = userIdRef.current;
-      if (!userId) return { ok: false, error: "Not signed in" };
-      return storageAdapter.save(userId, next);
-    }),
+    createSaveQueue<GameState>(
+      async (next, userId) => {
+        if (userIdRef.current !== userId) {
+          return { ok: false, error: "User switched — save aborted" };
+        }
+        return storageAdapter.save(userId, next);
+      },
+      () => userIdRef.current,
+    ),
   );
 
   const flushProgressNow = useCallback(() => {
-    if (!userIdRef.current) return;
+    const uid = userIdRef.current;
+    // Only flush once this account's hydrate finished — never write another user's UI state.
+    if (!uid || loadedUserIdRef.current !== uid) return;
     void saveQueueRef.current.flushNow(
       toPersistableGameState(stateRef.current),
     );
@@ -862,23 +874,29 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (loadedUserIdRef.current === uid) return;
 
     let cancelled = false;
-    setHydrated(false);
+    // Wipe previous account from UI immediately so User B never sees User A's progress.
+    loadedUserIdRef.current = null;
+    prevFullDayRef.current = false;
     saveQueueRef.current.invalidate();
+    dispatch({ type: "HYDRATE", payload: createInitialState() });
+    setHydrated(false);
+    setModal({ pledge: null, reel: null });
 
     void (async () => {
       const [saved, puzzleProgress] = await Promise.all([
         storageAdapter.load(uid),
         loadPuzzleProgress(uid),
       ]);
-      if (cancelled) return;
+      if (cancelled || userIdRef.current !== uid) return;
 
       const today = todayKey();
       const puzzleDoneToday = Boolean(puzzleProgress.attempts[today]);
       const payload = saved ?? createInitialState();
-      const repaired = repairDayCriteriaLogFromSources(
+      const repairedLogs = repairDayCriteriaLogFromSources(
         payload,
         puzzleProgress.attempts,
       );
+      const repaired = repairJoinedDateFromActivity(repairedLogs);
       const hydratedPayload = {
         ...repaired,
         signedIn: true,
@@ -886,9 +904,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
         // Keep prior-day puzzleCompleted for rollDayIfNeeded snapshot.
         // Do NOT swap to "today's puzzle" before the leaving day is snapshotted.
         puzzleCompleted: repaired.puzzleCompleted,
+        streak: computeStreak(repaired, today),
       };
       // Baseline = what Supabase already has. Post-HYDRATE roll snapshots
       // must flush so leaving-day completions are not lost on restart.
+      if (userIdRef.current !== uid) return;
       saveQueueRef.current.setBaseline(toPersistableGameState(hydratedPayload));
       dispatch({
         type: "HYDRATE",
@@ -929,12 +949,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated || authLoading || !user) return;
+    if (loadedUserIdRef.current !== user.id) return;
     saveQueueRef.current.enqueue(toPersistableGameState(state));
   }, [state, hydrated, user, authLoading]);
 
   // Persist immediately after hydrate/roll so dayCriteriaLog snapshots hit Supabase.
   useEffect(() => {
     if (!hydrated || !user) return;
+    if (loadedUserIdRef.current !== user.id) return;
     const id = window.setTimeout(() => flushProgressNow(), 0);
     return () => window.clearTimeout(id);
   }, [hydrated, user, flushProgressNow]);
@@ -1114,9 +1136,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
         void (async () => {
           try {
             // Persist local completions before enroll can re-hydrate from server.
-            await saveQueueRef.current.flushNow(
-              toPersistableGameState(stateRef.current),
-            );
+            if (loadedUserIdRef.current === userIdRef.current) {
+              await saveQueueRef.current.flushNow(
+                toPersistableGameState(stateRef.current),
+              );
+            }
             const res = await fetch("/api/challenge/enroll", {
               method: "POST",
               credentials: "include",
@@ -1140,8 +1164,12 @@ export function GameProvider({ children }: { children: ReactNode }) {
                   const syncData = (await syncRes.json()) as {
                     state?: GameState | null;
                   };
-                  if (syncData.state) {
-                    dispatch({ type: "HYDRATE", payload: syncData.state });
+                  if (syncData.state && loadedUserIdRef.current === userIdRef.current) {
+                    const normalized = normalizeGameState(syncData.state);
+                    saveQueueRef.current.setBaseline(
+                      toPersistableGameState(normalized),
+                    );
+                    dispatch({ type: "HYDRATE", payload: normalized });
                   }
                 }
               } catch {
@@ -1160,7 +1188,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
               return;
             }
             if (data.state) {
-              dispatch({ type: "HYDRATE", payload: data.state });
+              if (loadedUserIdRef.current === userIdRef.current) {
+                const normalized = normalizeGameState(data.state);
+                saveQueueRef.current.setBaseline(
+                  toPersistableGameState(normalized),
+                );
+                dispatch({ type: "HYDRATE", payload: normalized });
+              }
             } else if (
               typeof data.rdm === "number" &&
               typeof data.challengeEnrolledMonthKey === "string"

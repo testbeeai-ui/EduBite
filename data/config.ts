@@ -70,6 +70,21 @@ export const WA_SQUAD = {
 /** Sibling app — full lessons / explore mode */
 export const EDUBLAST_URL = "https://www.edublast.in";
 
+/** Deep links into EduBlast (Edubite banner only — do not edit Web/). */
+export const EDUBLAST_LINKS = {
+  home: EDUBLAST_URL,
+  /** Educational Social Media → Community wall */
+  community: `${EDUBLAST_URL}/explore/community`,
+  /** Gyan++ DoubtWall */
+  gyan: `${EDUBLAST_URL}/doubts`,
+  /** Rewards for Study / streaks → Play Hub */
+  playHub: `${EDUBLAST_URL}/play`,
+  /** Learning Buddy */
+  learningBuddy: `${EDUBLAST_URL}/refer-earn?tab=learning_buddy`,
+  /** Unlock Edufundz */
+  edufundz: `${EDUBLAST_URL}/edufund`,
+} as const;
+
 export const NAV_ITEMS = [
   { id: "home", label: "Home", shortLabel: "Home", emoji: "⌂", accent: "from-teal/25 to-blue/15" },
   { id: "dailydose", label: "DailyDose", shortLabel: "DailyDose", emoji: "🍬", accent: "from-teal/30 to-teal/10" },

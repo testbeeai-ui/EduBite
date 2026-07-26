@@ -75,7 +75,11 @@ export async function saveGameState(
       method: "PUT",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ state: normalizeGameState(state) }),
+      body: JSON.stringify({
+        state: normalizeGameState(state),
+        // Server rejects if session user ≠ this id (blocks cross-account writes).
+        expectedUserId: userId,
+      }),
     });
     if (!res.ok) {
       const error = `game save failed: ${res.status}`;

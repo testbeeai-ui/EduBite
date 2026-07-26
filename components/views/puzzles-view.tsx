@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth/auth-provider";
 import { useAppClock } from "@/lib/clock/app-clock";
 import { useGame } from "@/lib/store/game-provider";
 import {
+  appClockNow,
   formatCountdown,
   msUntilDateEnd,
   puzzleForDate,
@@ -34,7 +35,7 @@ import { formatShortDate } from "@/lib/utils";
 
 export function PuzzlesView() {
   const { user } = useAuth();
-  const { todayKey: clockToday } = useAppClock();
+  const { todayKey: clockToday, isOverridden } = useAppClock();
   const { withAuth, markPuzzleCompleted } = useGame();
   const [progress, setProgress] = useState<PuzzleProgress | null>(null);
   const [note, setNote] = useState("");
@@ -73,7 +74,8 @@ export function PuzzlesView() {
   }, [user?.id, today, puzzle.id]);
 
   useEffect(() => {
-    const tick = () => setCountdown(msUntilDateEnd(today));
+    const tick = () =>
+      setCountdown(msUntilDateEnd(today, appClockNow(today)));
     tick();
     const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
@@ -358,6 +360,12 @@ export function PuzzlesView() {
                 <Clock3 className="w-5 h-5" />
                 {formatCountdown(countdown)}
               </p>
+              {isOverridden && countdown <= 0 ? (
+                <p className="mt-2 text-[11px] text-[var(--text-dim)]">
+                  Day ended on the App Clock — advance Date traveler +1 to open
+                  this answer under Yesterday&apos;s reveal.
+                </p>
+              ) : null}
             </div>
             <div
               aria-hidden

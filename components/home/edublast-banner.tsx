@@ -1,149 +1,156 @@
 "use client";
 
 import Image from "next/image";
+import { EDUBLAST_LINKS } from "@/data/config";
 import { cn } from "@/lib/utils";
 
 const FEATURES = [
   {
-    accent: "#1D9E75",
+    tone: "teal" as const,
     icon: "ti ti-social",
-    title: ["Educational", "Social Media"],
+    title: "Educational Social Media",
     sub: "Post · Learn · Earn RDM",
-    iconClass: "bg-[rgba(29,158,117,0.14)] border-[rgba(29,158,117,0.3)] text-[#1D9E75]",
+    href: EDUBLAST_LINKS.community,
   },
   {
-    accent: "#7F77DD",
+    tone: "purple" as const,
     icon: "ti ti-help-circle",
-    title: ["Gyan++", "DoubtWall"],
-    sub: "AI tutor · instant answers",
-    iconClass: "bg-[rgba(127,119,221,0.14)] border-[rgba(127,119,221,0.3)] text-[#7F77DD]",
+    title: "Gyan++ DoubtWall",
+    sub: "AI Tutor · Instant Answers",
+    href: EDUBLAST_LINKS.gyan,
   },
   {
-    accent: "#EF9F27",
+    tone: "amber" as const,
     icon: "ti ti-coin",
-    title: ["Rewards", "for Study"],
-    sub: "Earn RDM · streaks · prizes",
-    iconClass: "bg-[rgba(239,159,39,0.14)] border-[rgba(239,159,39,0.3)] text-[#EF9F27]",
+    title: "Rewards for Study",
+    sub: "Earn · Streaks · Prizes",
+    href: EDUBLAST_LINKS.playHub,
   },
   {
-    accent: "#378ADD",
+    tone: "blue" as const,
     icon: "ti ti-users",
-    title: ["Learning", "Buddy"],
-    sub: "Study together · grow faster",
-    iconClass: "bg-[rgba(55,138,221,0.14)] border-[rgba(55,138,221,0.3)] text-[#378ADD]",
+    title: "Learning Buddy",
+    sub: "Study Together · Grow Faster",
+    href: EDUBLAST_LINKS.learningBuddy,
   },
   {
-    accent: "#D4537E",
+    tone: "pink" as const,
     icon: "ti ti-heart",
-    title: ["Unlock", "Edufundz"],
-    sub: "₹3K–₹50K grants · no test",
-    iconClass: "bg-[rgba(212,83,126,0.14)] border-[rgba(212,83,126,0.3)] text-[#D4537E]",
+    title: "Unlock Edufundz",
+    sub: "₹3K–₹50K Grants · No Test",
+    href: EDUBLAST_LINKS.edufundz,
   },
 ] as const;
 
-function FeatureCard({
-  accent,
-  icon,
-  title,
-  sub,
-  iconClass,
-  className,
-}: (typeof FEATURES)[number] & { className?: string }) {
+const TONE_CLASS = {
+  teal: "bg-[rgba(29,158,117,0.14)] text-[#1D9E75]",
+  purple: "bg-[rgba(127,119,221,0.14)] text-[#7F77DD]",
+  amber: "bg-[rgba(239,159,39,0.14)] text-[#EF9F27]",
+  blue: "bg-[rgba(55,138,221,0.14)] text-[#378ADD]",
+  pink: "bg-[rgba(212,83,126,0.14)] text-[#D4537E]",
+} as const;
+
+export function EdublastBanner({ className }: { className?: string }) {
   return (
-    <a
-      href="https://edublast.in"
-      target="_blank"
-      rel="noopener noreferrer"
+    <aside
+      aria-label="EduBlast"
       className={cn(
-        "relative flex flex-col justify-center px-3.5 py-4 sm:px-3.5 sm:py-4",
-        "border-r border-[#1a2d48] last:border-r-0",
-        "transition-colors hover:bg-white/[0.04] block",
+        "relative w-full lg:w-[216px] lg:shrink-0 overflow-hidden rounded-[18px]",
+        "border border-white/[0.07] bg-[#141A23]",
+        "bg-[linear-gradient(165deg,rgba(29,158,117,0.16)_0%,rgba(22,26,34,0.4)_32%,#141A23_55%)]",
+        "px-4 pt-[22px] pb-[18px] lg:sticky lg:top-5",
         className,
       )}
     >
-      <span
-        className="absolute inset-x-0 top-0 h-[2.5px]"
-        style={{ background: accent }}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#1D9E75,#EF9F27,#7F77DD,#378ADD,#D4537E)]"
         aria-hidden
       />
-      <div
-        className={cn(
-          "mb-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border",
-          iconClass,
-        )}
+
+      <a
+        href={EDUBLAST_LINKS.community}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mb-3.5 inline-flex items-center transition-opacity hover:opacity-90"
+        aria-label="EduBlast Community"
       >
-        <i className={cn(icon, "text-lg leading-none")} aria-hidden />
-      </div>
-      <div className="text-xs font-bold leading-tight text-[#E8EAF0]">
-        {title[0]}
-        <br />
-        {title[1]}
-      </div>
-      <div className="mt-1 text-[9.5px] uppercase leading-snug tracking-wide text-[#5C6480]">
-        {sub}
-      </div>
-    </a>
-  );
-}
+        <Image
+          src="/images/logo-2.png"
+          alt="EduBlast"
+          width={180}
+          height={36}
+          className="h-8 w-auto max-w-[180px] object-contain object-left"
+          priority
+        />
+      </a>
 
-export function EdublastBanner() {
-  return (
-    <section
-      aria-label="EduBlast banner"
-      className="relative mb-4 overflow-hidden rounded-[14px] border border-[#1e3352] bg-gradient-to-br from-[#0b1622] via-[#0e1c2e] to-[#091a18]"
-      suppressHydrationWarning
-    >
-      <div
-        className="pointer-events-none absolute -left-10 -top-[60px] h-[280px] w-[280px] rounded-full bg-[radial-gradient(circle,rgba(29,158,117,0.12)_0%,transparent_65%)]"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute -bottom-20 right-20 h-[220px] w-[220px] rounded-full bg-[radial-gradient(circle,rgba(127,119,221,0.1)_0%,transparent_65%)]"
-        aria-hidden
-      />
+      <p className="mb-3 text-[11.5px] leading-relaxed text-[#8B96A8]">
+        Deep study for <b className="font-semibold text-[#1D9E75]">Class XI &amp; XII</b>{" "}
+        — India&apos;s AI‑powered learning social.
+      </p>
 
-      <div className="relative z-[1] grid grid-cols-1 lg:grid-cols-[minmax(0,270px)_1fr]">
-        <div className="flex flex-col justify-center border-b border-[#1e3352] px-5 py-4 lg:border-b-0 lg:border-r lg:py-0 lg:pl-[22px] lg:pr-5">
-          <div className="mb-1.5 flex items-center gap-2">
-            <Image
-              src="/images/logo-2.png"
-              alt="EduBlast"
-              width={180}
-              height={28}
-              className="h-7 max-w-[200px] object-contain object-left"
-              style={{ width: "auto", height: "auto" }}
-              priority
-            />
-          </div>
-          <p className="text-[11.5px] font-bold leading-snug text-[#E8EAF0]">
-            Deep study for <span className="text-[#1D9E75]">Class XI &amp; XII</span>
-          </p>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <span className="rounded-full border border-[rgba(55,138,221,0.35)] bg-[rgba(55,138,221,0.15)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#85B7EB]">
-              Physics
-            </span>
-            <span className="rounded-full border border-[rgba(29,158,117,0.35)] bg-[rgba(29,158,117,0.15)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#9FE1CB]">
-              Chemistry
-            </span>
-            <span className="rounded-full border border-[rgba(239,159,39,0.35)] bg-[rgba(239,159,39,0.15)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#FAC775]">
-              Maths
-            </span>
-            <span className="rounded-full border border-[rgba(127,119,221,0.35)] bg-[rgba(127,119,221,0.15)] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[#AFA9EC]">
-              JEE · KCET · CBSE
-            </span>
-          </div>
-          <p className="mt-1.5 text-[10px] text-[#5C6480]">
-            India&apos;s AI-powered learning social —{" "}
-            <span className="font-semibold text-[#1D9E75]">edublast.in</span>
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          {FEATURES.map((feature) => (
-            <FeatureCard key={feature.icon} {...feature} />
-          ))}
-        </div>
+      <div className="mb-2.5 flex flex-wrap gap-1.5">
+        <span className="rounded-full border border-[rgba(29,158,117,0.3)] px-2 py-1 text-[9.5px] font-bold tracking-wide text-[#1D9E75]">
+          PHYSICS
+        </span>
+        <span className="rounded-full border border-[rgba(239,159,39,0.3)] px-2 py-1 text-[9.5px] font-bold tracking-wide text-[#EF9F27]">
+          CHEMISTRY
+        </span>
+        <span className="rounded-full border border-[rgba(55,138,221,0.3)] px-2 py-1 text-[9.5px] font-bold tracking-wide text-[#378ADD]">
+          MATHS
+        </span>
       </div>
-    </section>
+
+      <div className="mb-4 flex flex-wrap items-center gap-1.5 text-[10.5px] text-[#5C6577]">
+        <span className="font-bold text-[#7F77DD]">JEE</span>
+        <span className="h-0.5 w-0.5 rounded-full bg-[#5C6577]" aria-hidden />
+        <span className="font-bold text-[#7F77DD]">KCET</span>
+        <span className="h-0.5 w-0.5 rounded-full bg-[#5C6577]" aria-hidden />
+        <span className="font-bold text-[#7F77DD]">CBSE</span>
+      </div>
+
+      <div className="my-3.5 h-px bg-white/[0.045]" aria-hidden />
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:flex-col">
+        {FEATURES.map((f) => (
+          <a
+            key={f.title}
+            href={f.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-start gap-2.5 rounded-[11px] border border-white/[0.045] bg-white/[0.015] px-2.5 py-2 transition-transform hover:translate-x-0.5 hover:border-white/[0.07] sm:flex-1 sm:basis-[45%] lg:basis-auto"
+          >
+            <span
+              className={cn(
+                "flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[7px] text-xs",
+                TONE_CLASS[f.tone],
+              )}
+            >
+              <i className={cn(f.icon, "text-[12px] leading-none")} aria-hidden />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[11.5px] font-bold leading-snug text-[#EAEEF3]">
+                {f.title}
+              </span>
+              <span className="mt-0.5 block text-[9px] uppercase tracking-[0.03em] text-[#5C6577]">
+                {f.sub}
+              </span>
+            </span>
+          </a>
+        ))}
+      </div>
+
+      <p className="mt-4 border-t border-white/[0.045] pt-3 text-center text-[9.5px] text-[#5C6577]">
+        <a
+          href={EDUBLAST_LINKS.community}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold text-[#8B96A8] hover:text-[#1D9E75]"
+        >
+          edublast.in
+        </a>{" "}
+        · your daily study circle
+      </p>
+    </aside>
   );
 }

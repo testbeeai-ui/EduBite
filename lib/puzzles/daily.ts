@@ -207,6 +207,24 @@ export function msUntilDateEnd(dateKey: string, now = new Date()): number {
   return Math.max(0, target.getTime() - now.getTime());
 }
 
+/**
+ * Map wall-clock time-of-day onto an App Clock dateKey.
+ * So Date traveler “Jul 8” at real 3:45pm → countdown to Jul 8 midnight, not 00:00:00.
+ */
+export function appClockNow(dateKey: string, realNow = new Date()): Date {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  if (!y || !m || !d) return realNow;
+  return new Date(
+    y,
+    m - 1,
+    d,
+    realNow.getHours(),
+    realNow.getMinutes(),
+    realNow.getSeconds(),
+    realNow.getMilliseconds(),
+  );
+}
+
 export function formatCountdown(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const h = Math.floor(totalSec / 3600);
