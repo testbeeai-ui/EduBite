@@ -110,7 +110,7 @@ export function AppShell() {
     <>
       <AppHeader />
       <main
-        className="max-w-[1180px] w-full mx-auto px-4 sm:px-7 py-5 sm:py-8 pb-8 sm:pb-10"
+        className="mx-auto w-full max-w-[1280px] px-4 py-4 sm:px-6 sm:py-5 pb-6 sm:pb-8"
         suppressHydrationWarning
       >
         {!mounted || !hydrated ? (

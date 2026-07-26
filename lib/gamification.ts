@@ -46,6 +46,7 @@ export function createInitialState(): GameState {
       correct12: 0,
       completed12: false,
       currentClass: "11",
+      classChosen: false,
       answers11: [],
       answers12: [],
     },
@@ -372,11 +373,43 @@ export function computeStreak(
   const heat = buildJourneyHeatmap(state, 28, asOfDateKey);
   const pastAndToday = heat.filter((d) => d.status !== "upcoming");
   let streak = 0;
-  for (let i = pastAndToday.length - 1; i >= 0; i--) {
+  // Incomplete "today" does not wipe the streak — count consecutive full days
+  // ending at yesterday (or today if today is already full).
+  let i = pastAndToday.length - 1;
+  if (
+    i >= 0 &&
+    pastAndToday[i]!.status === "today" &&
+    !isFullDay(pastAndToday[i]!.criteria)
+  ) {
+    i -= 1;
+  }
+  for (; i >= 0; i--) {
     if (isFullDay(pastAndToday[i]!.criteria)) streak++;
     else break;
   }
   return streak;
+}
+
+/**
+ * If activity logs exist before joinedDate (hydrate / clock races), pull Day 1
+ * back so the streak meter shows real completed days instead of a fresh join.
+ */
+export function repairJoinedDateFromActivity(state: GameState): GameState {
+  const keys: string[] = [];
+  for (const key of Object.keys(state.dayCriteriaLog ?? {})) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(key)) keys.push(key);
+  }
+  for (const key of Object.keys(state.doseDayLog ?? {})) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(key)) keys.push(key);
+  }
+  if (keys.length === 0) return state;
+  keys.sort();
+  const earliest = keys[0]!;
+  const current = state.joinedDate;
+  if (!current || earliest < current) {
+    return { ...state, joinedDate: earliest };
+  }
+  return state;
 }
 
 export function habitsProgress(state: GameState) {

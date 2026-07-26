@@ -97,6 +97,11 @@ export interface DoseState {
   correct12: number;
   completed12: boolean;
   currentClass: "11" | "12";
+  /**
+   * False until the learner picks Class 11 or 12 once.
+   * After that we remember currentClass and allow toggle switches.
+   */
+  classChosen: boolean;
   answers11: number[];
   answers12: number[];
 }

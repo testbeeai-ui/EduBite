@@ -118,6 +118,7 @@ function normalizeDose(raw: unknown): DoseState {
       correct12: 0,
       completed12: false,
       currentClass: "11",
+      classChosen: false,
       answers11: [],
       answers12: [],
     };
@@ -144,6 +145,19 @@ function normalizeDose(raw: unknown): DoseState {
   const answers11 = Array.isArray(raw.answers11) ? raw.answers11.map(Number) : [];
   const answers12 = Array.isArray(raw.answers12) ? raw.answers12.map(Number) : [];
 
+  // Legacy blobs had no classChosen — treat prior progress as already chosen.
+  const classChosen = asBoolean(
+    raw.classChosen,
+    Boolean(
+      completed11 ||
+        completed12 ||
+        answers11.length > 0 ||
+        answers12.length > 0 ||
+        index11 > 0 ||
+        index12 > 0,
+    ),
+  );
+
   return {
     index,
     locked,
@@ -160,6 +174,7 @@ function normalizeDose(raw: unknown): DoseState {
     correct12,
     completed12,
     currentClass,
+    classChosen,
     answers11,
     answers12,
   };
@@ -245,7 +260,19 @@ export function normalizeGameState(raw: unknown): GameState {
   const looksLikeLegacyScoreOnly =
     Object.keys(raw).length <= 2 && "score" in raw && !("rdm" in raw);
   if (looksLikeLegacyScoreOnly) return base;
-  const dose = normalizeDose(raw.dose);
+  const doseDayLog = normalizeDoseDayLog(raw.doseDayLog);
+  let dose = normalizeDose(raw.dose);
+  if (!dose.classChosen) {
+    const logKeys = Object.keys(doseDayLog).sort();
+    const lastKey = logKeys[logKeys.length - 1];
+    if (lastKey && doseDayLog[lastKey]) {
+      dose = {
+        ...dose,
+        classChosen: true,
+        currentClass: doseDayLog[lastKey]!.classLevel === "12" ? "12" : "11",
+      };
+    }
+  }
   const defaultDoseCredit = dose.completed
     ? dose.correct * getLiveRdmAmount("dose.per_correct")
     : 0;
@@ -288,7 +315,7 @@ export function normalizeGameState(raw: unknown): GameState {
     ),
     funbrainRdmCredited,
     puzzleCompleted: asBoolean(raw.puzzleCompleted, false),
-    doseDayLog: normalizeDoseDayLog(raw.doseDayLog),
+    doseDayLog,
     dayCriteriaLog: normalizeDayCriteriaLog(raw.dayCriteriaLog),
     challengeEnrolledMonthKey:
       typeof raw.challengeEnrolledMonthKey === "string" &&

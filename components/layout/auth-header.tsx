@@ -21,6 +21,11 @@ export function AuthHeaderActions({ streak }: AuthHeaderActionsProps) {
     "Student";
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
   const initial = (displayName[0] ?? "?").toUpperCase();
+  // Navbar: first word only, hard cap so it never crowds AI / nav.
+  const shortName = (() => {
+    const first = displayName.trim().split(/\s+/)[0] || displayName;
+    return first.length > 10 ? `${first.slice(0, 9)}…` : first;
+  })();
 
   const isProfileActive = activeView === "profile";
 
@@ -31,10 +36,11 @@ export function AuthHeaderActions({ streak }: AuthHeaderActionsProps) {
       {signedIn ? (
         <button
           type="button"
-          aria-label="View Profile"
+          aria-label={`View Profile — ${displayName}`}
+          title={displayName}
           onClick={() => setActiveView("profile")}
           className={cn(
-            "flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full border transition-all cursor-pointer",
+            "flex min-w-0 max-w-[7.5rem] items-center gap-1.5 pl-1 pr-2 py-1 rounded-full border transition-all cursor-pointer",
             "bg-[var(--surface)] border-[var(--line)] hover:border-teal/50 hover:bg-teal/[0.06]",
             isProfileActive && "border-teal text-teal ring-1 ring-teal/30 bg-teal/10",
           )}
@@ -51,8 +57,8 @@ export function AuthHeaderActions({ streak }: AuthHeaderActionsProps) {
               {initial}
             </span>
           )}
-          <span className="hidden md:inline font-display font-semibold text-xs max-w-[72px] lg:max-w-[100px] truncate">
-            {displayName}
+          <span className="hidden md:inline min-w-0 flex-1 font-display font-semibold text-xs truncate">
+            {shortName}
           </span>
         </button>
       ) : (

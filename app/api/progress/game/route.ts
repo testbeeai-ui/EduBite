@@ -59,9 +59,24 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const state = (body as { state?: GameState })?.state;
+    const payload = body as {
+      state?: GameState;
+      expectedUserId?: string;
+    };
+    const state = payload?.state;
     if (!state || typeof state !== "object") {
       return NextResponse.json({ error: "Missing state" }, { status: 400 });
+    }
+
+    // Guard against client races where User A's payload is PUT under User B's session.
+    if (
+      typeof payload.expectedUserId === "string" &&
+      payload.expectedUserId !== user.id
+    ) {
+      return NextResponse.json(
+        { error: "User mismatch — save rejected" },
+        { status: 409 },
+      );
     }
 
     const normalized = await writeNormalizedGameState(
