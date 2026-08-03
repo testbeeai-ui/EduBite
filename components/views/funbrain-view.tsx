@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { EdublastInfoTip } from "@/components/home/edublast-info-tip";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ViewHeader } from "@/components/ui/modal";
@@ -90,13 +91,16 @@ export function FunBrainView() {
             >
               Replay sprint
             </Button>
-            <Button
-              onClick={() =>
-                window.open(EDUBLAST_URL, "_blank", "noopener,noreferrer")
-              }
-            >
-              Continue on edublast.in →
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() =>
+                  window.open(EDUBLAST_URL, "_blank", "noopener,noreferrer")
+                }
+              >
+                Continue on edublast.in →
+              </Button>
+              <EdublastInfoTip />
+            </div>
           </div>
         </Card>
 

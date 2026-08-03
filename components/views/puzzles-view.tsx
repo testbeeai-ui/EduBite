@@ -13,6 +13,7 @@ import {
   Unlock,
 } from "lucide-react";
 import { FEATURES } from "@/data/config";
+import { EdublastInfoTip } from "@/components/home/edublast-info-tip";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { useAppClock } from "@/lib/clock/app-clock";
@@ -172,11 +173,14 @@ export function PuzzlesView() {
               the official answer opens tomorrow.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <StatChip
-              icon={<Flame className="w-3.5 h-3.5 text-amber" />}
-              label={`${progress?.streak ?? 0}d streak`}
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-1.5">
+              <StatChip
+                icon={<Flame className="w-3.5 h-3.5 text-amber" />}
+                label={`${progress?.streak ?? 0}d streak`}
+              />
+              <EdublastInfoTip size="sm" />
+            </div>
             <StatChip
               icon={<ScrollText className="w-3.5 h-3.5 text-gold" />}
               label={`${attemptedCount} solved days`}

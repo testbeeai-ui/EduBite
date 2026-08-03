@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { DOSE_DURATION_SEC, EDUBLAST_URL } from "@/data/config";
+import { EdublastInfoTip } from "@/components/home/edublast-info-tip";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ProgressBar } from "@/components/ui/progress-bar";
@@ -213,13 +214,16 @@ export function DailyDoseView() {
             >
               Replay DailyDose
             </Button>
-            <Button
-              onClick={() =>
-                window.open(EDUBLAST_URL, "_blank", "noopener,noreferrer")
-              }
-            >
-              Continue on edublast.in →
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() =>
+                  window.open(EDUBLAST_URL, "_blank", "noopener,noreferrer")
+                }
+              >
+                Continue on edublast.in →
+              </Button>
+              <EdublastInfoTip />
+            </div>
           </div>
         </Card>
 

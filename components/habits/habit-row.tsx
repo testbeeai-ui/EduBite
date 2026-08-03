@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { EdublastInfoTip } from "@/components/home/edublast-info-tip";
 import type { HabitState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -174,8 +175,11 @@ export function HabitsProgressHero({
     <div className="mb-0">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-teal">
-            Today&apos;s Progress
+          <div className="mb-2 flex items-center gap-2">
+            <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-teal">
+              Today&apos;s Progress
+            </span>
+            <EdublastInfoTip size="sm" />
           </div>
           <div className="flex flex-wrap items-baseline gap-1.5">
             <b className="text-[32px] font-extrabold leading-none sm:text-[38px]">
