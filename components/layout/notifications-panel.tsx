@@ -140,7 +140,7 @@ export function NotificationsPanel({
                           onClick={() => openNote(n.id, target)}
                           className="flex-1 px-3 py-2 text-[11px] font-semibold text-teal hover:bg-teal/[0.08]"
                         >
-                          Open
+                          {target ? "Open" : "Mark as read"}
                         </button>
                         <button
                           type="button"

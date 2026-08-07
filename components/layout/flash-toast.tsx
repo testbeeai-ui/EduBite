@@ -16,7 +16,9 @@ function notificationKey(note: Pick<Notification, "id" | "createdAt">): string {
  */
 export function FlashToast() {
   const { state, hydrated, setActiveView, markNotificationRead } = useGame();
-  const latest = state.notifications[0] ?? null;
+  // Newest eligible unread — not merely index 0 (which may be read / welcome).
+  const latest =
+    state.notifications.find((n) => !n.read && n.id !== "welcome") ?? null;
   const [visible, setVisible] = useState<Notification | null>(null);
   /** Keys present right after hydrate finishes — never toast those on reload. */
   const seenAtHydrateRef = useRef<Set<string> | null>(null);
@@ -42,9 +44,6 @@ export function FlashToast() {
     }
 
     if (!latest) return;
-    // Seeded welcome stays in the burger inbox only — never as a floating toast.
-    if (latest.id === "welcome") return;
-    if (latest.read) return;
 
     const toastKey = notificationKey(latest);
     if (toastedIdsRef.current.has(toastKey)) return;
