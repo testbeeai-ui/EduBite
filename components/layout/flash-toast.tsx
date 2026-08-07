@@ -24,6 +24,15 @@ export function FlashToast() {
   const seenAtHydrateRef = useRef<Set<string> | null>(null);
   const toastedIdsRef = useRef<Set<string>>(new Set());
 
+  // Drop the banner if its notification was read or removed elsewhere.
+  useEffect(() => {
+    if (!visible) return;
+    const stillUnread = state.notifications.some(
+      (n) => n.id === visible.id && !n.read,
+    );
+    if (!stillUnread) setVisible(null);
+  }, [state.notifications, visible]);
+
   useEffect(() => {
     // Wait for GameProvider hydrate so we snapshot the real inbox, not [].
     if (!hydrated) {
@@ -43,7 +52,10 @@ export function FlashToast() {
       return;
     }
 
-    if (!latest) return;
+    if (!latest) {
+      setVisible(null);
+      return;
+    }
 
     const toastKey = notificationKey(latest);
     if (toastedIdsRef.current.has(toastKey)) return;

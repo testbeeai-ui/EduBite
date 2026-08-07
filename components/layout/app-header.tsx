@@ -22,6 +22,12 @@ export function AppHeader() {
     setNotificationsOpen(false);
   };
 
+  // Close overlays when the view changes from outside the header (e.g. toast tap).
+  useEffect(() => {
+    setBurgerOpen(false);
+    setNotificationsOpen(false);
+  }, [activeView]);
+
   useEffect(() => {
     if (!burgerOpen && !notificationsOpen) return;
     const onKey = (e: KeyboardEvent) => {
