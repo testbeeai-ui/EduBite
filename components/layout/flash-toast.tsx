@@ -3,18 +3,23 @@
 import { useEffect, useRef, useState } from "react";
 import { resolveNotificationTarget } from "@/lib/notifications";
 import { useGame } from "@/lib/store/game-provider";
-import type { Notification } from "@/lib/types";
+import type { AppView, Notification } from "@/lib/types";
 
 function notificationKey(note: Pick<Notification, "id" | "createdAt">): string {
   return `${note.id}|${note.createdAt ?? ""}`;
 }
 
+interface FlashToastProps {
+  /** Prefer header navigate so burger / notifications panels close with the toast. */
+  onNavigate?: (view: AppView) => void;
+}
+
 /**
  * Global floating toast for new inbox notifications.
- * Hides after a few seconds but keeps the item in the burger inbox.
+ * Hides after a few seconds but keeps the item in the inbox.
  * Tap opens the linked view (when present).
  */
-export function FlashToast() {
+export function FlashToast({ onNavigate }: FlashToastProps) {
   const { state, hydrated, setActiveView, markNotificationRead } = useGame();
   // Newest eligible unread — not merely index 0 (which may be read / welcome).
   const latest =
@@ -49,6 +54,7 @@ export function FlashToast() {
     if (seenAtHydrateRef.current === null) {
       seenAtHydrateRef.current = currentKeys;
       for (const key of currentKeys) toastedIdsRef.current.add(key);
+      setVisible(null);
       return;
     }
 
@@ -74,14 +80,16 @@ export function FlashToast() {
 
   const openLinked = () => {
     const target = resolveNotificationTarget(visible);
-    if (target) setActiveView(target);
     markNotificationRead(visible.id);
     setVisible(null);
+    if (!target) return;
+    if (onNavigate) onNavigate(target);
+    else setActiveView(target);
   };
 
   return (
     <div
-      className="fixed bottom-6 left-1/2 z-[80] w-[min(420px,calc(100%-2rem))] -translate-x-1/2"
+      className="fixed bottom-6 left-1/2 z-[230] w-[min(420px,calc(100%-2rem))] -translate-x-1/2"
       role="status"
       aria-live="polite"
     >

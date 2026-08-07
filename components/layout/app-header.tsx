@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Bell, Menu } from "lucide-react";
 import { AuthHeaderActions } from "@/components/layout/auth-header";
 import { BurgerPanel } from "@/components/layout/burger-panel";
+import { FlashToast } from "@/components/layout/flash-toast";
 import { NotificationsPanel } from "@/components/layout/notifications-panel";
 import { TopNav } from "@/components/layout/top-nav";
 import { useGame } from "@/lib/store/game-provider";
@@ -123,6 +124,7 @@ export function AppHeader() {
         onClose={() => setNotificationsOpen(false)}
         onNavigate={navigate}
       />
+      <FlashToast onNavigate={navigate} />
     </header>
   );
 }
