@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppHeader } from "@/components/layout/app-header";
@@ -76,7 +76,7 @@ const PUBLIC_VIEWS = new Set<AppView>(["home"]);
 
 export function AppShell() {
   const [mounted, setMounted] = useState(false);
-  const { activeView, hydrated, setActiveView, clearNotification } = useGame();
+  const { activeView, hydrated, setActiveView } = useGame();
   const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
@@ -95,16 +95,6 @@ export function AppShell() {
       ? "home"
       : activeView;
   const ViewComponent = VIEW_MAP[safeView];
-
-  // Don't leave enroll toast sticky when browsing other pages.
-  const prevViewRef = useRef(safeView);
-  useEffect(() => {
-    const prev = prevViewRef.current;
-    prevViewRef.current = safeView;
-    if (prev === "challenge" && safeView !== "challenge") {
-      clearNotification("challenge-enroll");
-    }
-  }, [safeView, clearNotification]);
 
   return (
     <>
@@ -130,7 +120,7 @@ export function AppShell() {
         )}
       </main>
       <ModalHost />
-      {safeView === "challenge" ? <FlashToast /> : null}
+      <FlashToast />
     </>
   );
 }

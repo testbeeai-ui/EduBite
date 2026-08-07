@@ -58,7 +58,7 @@ export function WASquadView() {
       </Button>
 
       <p className="text-[11px] text-[var(--text-dim)] mt-3 text-center">
-        Backend integration placeholder — group invite will sync with your account later.
+        Opens the official Edubite WhatsApp group invite.
       </p>
     </div>
   );

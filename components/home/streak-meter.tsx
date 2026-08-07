@@ -182,6 +182,12 @@ export function StreakMeter() {
     () => buildJourneyHeatmap(state, 28, clockToday),
     [state, clockToday],
   );
+  // Align Day 1 under its real weekday (Sun=0 … Sat=6), matching
+  // monthly-challenge-view's leading blank padding.
+  const joinWeekday = useMemo(
+    () => parseDateKey(joinDate).getDay(),
+    [joinDate],
+  );
 
   const fullDays7 = countFullJourneyDays(
     week.filter((d) => d.status !== "upcoming"),
@@ -310,6 +316,13 @@ export function StreakMeter() {
             <div>S</div>
           </div>
           <div className="grid grid-cols-7 gap-2">
+            {Array.from({ length: joinWeekday }).map((_, i) => (
+              <div
+                key={`blank-${i}`}
+                className="min-h-[34px] invisible"
+                aria-hidden
+              />
+            ))}
             {heat.map((j) => (
               <HeatmapCell key={j.dateKey} j={j} />
             ))}
@@ -317,7 +330,7 @@ export function StreakMeter() {
           <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-[#5C6577]">
             <span>
               <b className="font-semibold text-[#8B96A8]">Day 1</b> · Joined{" "}
-              {formatShortDate(joinDate)} · Row 1: Weeks 1–2 · Row 2: Weeks 3–4
+              {formatShortDate(joinDate)} · Columns Sun–Sat
             </span>
             <span className="inline-flex items-center gap-1.5">
               Less

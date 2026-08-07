@@ -24,6 +24,8 @@ import type {
   Notification,
   DayCriteria,
 } from "@/lib/types";
+import { withResolvedNotificationTarget } from "@/lib/notifications";
+import { isAppView } from "@/lib/types";
 import { todayKey } from "@/lib/utils";
 
 function createDefaultBrainGymProgress(): BrainGymProgress {
@@ -221,13 +223,21 @@ function normalizeNotifications(raw: unknown): Notification[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter(isRecord)
-    .map((item) => ({
-      id: asString(item.id, "note"),
-      icon: asString(item.icon, "✨"),
-      text: asString(item.text, ""),
-    }))
+    .map((item): Notification => {
+      const targetView = isAppView(item.targetView) ? item.targetView : undefined;
+      const createdAt = asString(item.createdAt, "");
+      const note: Notification = {
+        id: asString(item.id, "note"),
+        icon: asString(item.icon, "✨"),
+        text: asString(item.text, ""),
+        read: asBoolean(item.read, false),
+      };
+      if (targetView) note.targetView = targetView;
+      if (createdAt) note.createdAt = createdAt;
+      return withResolvedNotificationTarget(note);
+    })
     .filter((n) => n.text.length > 0)
-    .slice(0, 5);
+    .slice(0, 20);
 }
 
 function normalizeHistory(raw: unknown): DayCriteria[] {
