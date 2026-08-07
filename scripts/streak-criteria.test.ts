@@ -128,6 +128,57 @@ function dbLikeState(): GameState {
   assert.equal(countFullJourneyDays(week), 1);
 }
 
+// --- Skipped days must not inherit the previous active day's completions ---
+{
+  resetClock();
+  const full = {
+    dose: true,
+    funbrain: true,
+    puzzles: true,
+    habits: true,
+    pledges: true,
+    pledgeAM: true,
+    pledgePM: true,
+    habitsDone: ["sleep"],
+    completedAt: "2026-08-08T12:00:00.000Z",
+  };
+  const state: GameState = {
+    ...createInitialState(),
+    joinedDate: "2026-08-03",
+    lastActiveDate: "2026-08-10",
+    // Active days Mon–Sat only; Sunday never visited → no dayCriteriaLog key.
+    dayCriteriaLog: {
+      "2026-08-03": full,
+      "2026-08-04": full,
+      "2026-08-05": full,
+      "2026-08-06": full,
+      "2026-08-07": full,
+      "2026-08-08": full,
+    },
+    // Legacy positional history still has Saturday's snapshot at the end —
+    // the old bug would map "1 day before Monday" onto this entry for Sunday.
+    history: [full, full, full, full, full, full],
+  };
+
+  const sunday = criteriaForDate(state, "2026-08-09", "2026-08-10");
+  assert.equal(sunday.dose, false, "skipped Sunday must not borrow Saturday dose");
+  assert.equal(isFullDay(sunday), false, "skipped Sunday is not a full day");
+  assert.equal(criteriaCount(sunday), 0, "skipped Sunday has zero criteria");
+
+  const saturday = criteriaForDate(state, "2026-08-08", "2026-08-10");
+  assert.equal(isFullDay(saturday), true, "real Saturday log still counts");
+
+  const week = buildJourneyWeek(state, "2026-08-10");
+  const sunCard = week.find((d) => d.dateKey === "2026-08-09");
+  assert.ok(sunCard, "Sunday appears in This week");
+  assert.equal(isFullDay(sunCard!.criteria), false);
+  assert.equal(
+    countFullJourneyDays(week.filter((d) => d.status !== "upcoming")),
+    5,
+    "week full-days = Tue–Sat only (not phantom Sunday)",
+  );
+}
+
 // --- mergeDayCriteriaRecord never drops completed pillars ---
 {
   const merged = mergeDayCriteriaRecord(

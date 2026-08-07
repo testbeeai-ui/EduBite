@@ -63,7 +63,8 @@ export const FEATURES = {
 
 export const WA_SQUAD = {
   jackpotAmount: "₹10,000",
-  joinUrl: "https://wa.me/910000000000",
+  /** Official Edubite WhatsApp group invite */
+  joinUrl: "https://chat.whatsapp.com/KRGYkPhUWSRF89Ghp04iCb",
   rankPlaceholder: null as number | null,
 };
 

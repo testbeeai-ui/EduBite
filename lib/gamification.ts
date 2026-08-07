@@ -67,6 +67,9 @@ export function createInitialState(): GameState {
         id: "welcome",
         icon: "✨",
         text: "Welcome to Edubite — start with today's DailyDose.",
+        targetView: "dailydose",
+        createdAt: new Date().toISOString(),
+        read: false,
       },
     ],
     history: [],
@@ -244,7 +247,7 @@ export function effectiveJourneyJoinDate(
   return qaJoin ?? asOfDateKey;
 }
 
-/** Criteria for a calendar date — today live, past from date log / history. */
+/** Criteria for a calendar date — today live, past from durable date logs only. */
 export function criteriaForDate(
   state: GameState,
   dateKey: string,
@@ -265,8 +268,9 @@ export function criteriaForDate(
     return emptyDayCriteria();
   }
 
-  // Durable logs always win. QA journey join / clock position must not hide
-  // days that were already completed while Date traveler was elsewhere.
+  // Durable per-date logs are the only source for past days. QA journey join /
+  // clock position must not hide days that were already completed while Date
+  // traveler was elsewhere.
   const fromLog = state.dayCriteriaLog?.[dateKey];
   const doseDone = Boolean(state.doseDayLog?.[dateKey]?.completed);
   if (fromLog || doseDone) {
@@ -276,17 +280,10 @@ export function criteriaForDate(
     });
   }
 
-  if (dateKey > today) return emptyDayCriteria();
-
-  const joinDate = effectiveJourneyJoinDate(state, asOfDateKey);
-  const offset = daysBetween(joinDate, dateKey);
-  if (offset < 0) return emptyDayCriteria();
-
-  const daysBeforeToday = daysBetween(dateKey, today);
-  const historyIndex = state.history.length - daysBeforeToday;
-  if (historyIndex >= 0 && historyIndex < state.history.length) {
-    return state.history[historyIndex];
-  }
+  // No log for this date → incomplete. Never fall back to state.history:
+  // that array is one entry per active-day rollover (no date keys, no gap
+  // padding), so a calendar-offset index paints skipped days (often Sunday)
+  // with the previous active day's completions.
   return emptyDayCriteria();
 }
 

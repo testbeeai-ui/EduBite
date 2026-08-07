@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { NAV_ITEMS } from "@/data/config";
 import { NavEmoji } from "@/components/layout/top-nav";
 import { useAuth } from "@/lib/auth/auth-provider";
+import { resolveNotificationTarget } from "@/lib/notifications";
 import { useGame } from "@/lib/store/game-provider";
 import type { AppView } from "@/lib/types";
 import { cn, formatRdm } from "@/lib/utils";
@@ -22,7 +23,8 @@ export function BurgerPanel({
   activeView,
   onNavigate,
 }: BurgerPanelProps) {
-  const { state, levelInfo } = useGame();
+  const { state, levelInfo, markNotificationRead, clearNotification } =
+    useGame();
   const { user, loading, openLogin, signOut } = useAuth();
   const signedIn = Boolean(user);
   const displayName =
@@ -31,6 +33,17 @@ export function BurgerPanel({
     user?.email?.split("@")[0] ||
     levelInfo.current.name;
   const initial = (displayName[0] ?? "?").toUpperCase();
+  const unreadCount = state.notifications.filter((n) => !n.read).length;
+
+  const openNotification = (id: string, targetView?: AppView) => {
+    const target = resolveNotificationTarget({ id, targetView });
+    markNotificationRead(id);
+    if (target) {
+      onNavigate(target);
+      return;
+    }
+    onClose();
+  };
 
   return (
     <AnimatePresence>
@@ -150,23 +163,64 @@ export function BurgerPanel({
                 <div className="flex items-center gap-2.5 text-[13px] font-semibold">
                   <span>🔔</span> Notifications
                 </div>
-                <span className="bg-pink text-white font-mono text-[10px] font-bold px-[7px] py-0.5 rounded-full">
-                  {state.notifications.length}
+                <span
+                  className={cn(
+                    "font-mono text-[10px] font-bold px-[7px] py-0.5 rounded-full",
+                    unreadCount > 0
+                      ? "bg-pink text-white"
+                      : "bg-white/10 text-[var(--text-dim)]",
+                  )}
+                >
+                  {unreadCount > 0 ? unreadCount : state.notifications.length}
                 </span>
               </div>
 
               {state.notifications.length > 0 ? (
-                <div className="px-3 pb-1 max-h-28 overflow-y-auto">
+                <div className="px-2 pb-1 max-h-44 overflow-y-auto space-y-0.5">
                   {state.notifications.map((n) => (
                     <div
                       key={n.id}
-                      className="text-[11.5px] text-[var(--text-dim)] py-[7px] border-t border-[var(--line)] first:border-t-0"
+                      className="flex items-stretch gap-1 border-t border-[var(--line)] first:border-t-0"
                     >
-                      {n.icon} {n.text}
+                      <button
+                        type="button"
+                        onClick={() => openNotification(n.id, n.targetView)}
+                        className={cn(
+                          "flex-1 min-w-0 text-left px-2 py-2 rounded-lg transition-colors",
+                          "hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-teal/40",
+                          n.read
+                            ? "text-[var(--text-dim)]"
+                            : "text-[var(--text)] bg-teal/[0.06]",
+                        )}
+                      >
+                        <span className="text-[11.5px] leading-snug">
+                          <span className="mr-1" aria-hidden>
+                            {n.icon}
+                          </span>
+                          {n.text}
+                        </span>
+                        {resolveNotificationTarget(n) ? (
+                          <span className="mt-1 block text-[10px] font-mono uppercase tracking-wide text-teal/80">
+                            Tap to open →
+                          </span>
+                        ) : null}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Dismiss notification"
+                        onClick={() => clearNotification(n.id)}
+                        className="shrink-0 px-2 text-[var(--text-dim)] hover:text-pink rounded-lg hover:bg-pink/[0.08]"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   ))}
                 </div>
-              ) : null}
+              ) : (
+                <p className="px-3 pb-2 text-[11px] text-[var(--text-dim)]">
+                  No notifications yet
+                </p>
+              )}
 
               <button
                 type="button"
