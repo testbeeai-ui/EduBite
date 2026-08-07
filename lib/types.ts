@@ -12,6 +12,25 @@ export type AppView =
   | "challenge"
   | "profile";
 
+export const APP_VIEWS: readonly AppView[] = [
+  "home",
+  "dailydose",
+  "funbrain",
+  "gyan",
+  "puzzles",
+  "wasquad",
+  "habits",
+  "achievements",
+  "inspiration",
+  "ai",
+  "challenge",
+  "profile",
+] as const;
+
+export function isAppView(value: unknown): value is AppView {
+  return typeof value === "string" && (APP_VIEWS as readonly string[]).includes(value);
+}
+
 export type PledgeType = "am" | "pm";
 
 export interface Question {
@@ -48,6 +67,12 @@ export interface Notification {
   id: string;
   icon: string;
   text: string;
+  /** When set, tapping the notification navigates to this app view. */
+  targetView?: AppView;
+  /** ISO timestamp when the notification was created. */
+  createdAt?: string;
+  /** True after the learner has opened it from the inbox. */
+  read?: boolean;
 }
 
 /** A calendar day counts toward streak only when all five are true. */

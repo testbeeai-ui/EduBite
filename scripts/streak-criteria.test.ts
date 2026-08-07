@@ -7,6 +7,7 @@ import {
   criteriaForDate,
   isFullDay,
   mergeDayCriteriaRecord,
+  repairDayCriteriaLogFromHistory,
   repairDayCriteriaLogFromSources,
 } from "@/lib/gamification";
 import { createInitialState } from "@/lib/gamification";
@@ -126,6 +127,103 @@ function dbLikeState(): GameState {
   const day1 = week.find((d) => d.dayNumber === 1)!;
   assert.equal(isFullDay(day1.criteria), true);
   assert.equal(countFullJourneyDays(week), 1);
+}
+
+// --- Skipped days must not inherit the previous active day's completions ---
+{
+  resetClock();
+  const full = {
+    dose: true,
+    funbrain: true,
+    puzzles: true,
+    habits: true,
+    pledges: true,
+    pledgeAM: true,
+    pledgePM: true,
+    habitsDone: ["sleep"],
+    completedAt: "2026-08-08T12:00:00.000Z",
+  };
+  const state: GameState = {
+    ...createInitialState(),
+    joinedDate: "2026-08-03",
+    lastActiveDate: "2026-08-10",
+    // Active days Mon–Sat only; Sunday never visited → no dayCriteriaLog key.
+    dayCriteriaLog: {
+      "2026-08-03": full,
+      "2026-08-04": full,
+      "2026-08-05": full,
+      "2026-08-06": full,
+      "2026-08-07": full,
+      "2026-08-08": full,
+    },
+    // Legacy positional history still has Saturday's snapshot at the end —
+    // the old bug would map "1 day before Monday" onto this entry for Sunday.
+    history: [full, full, full, full, full, full],
+  };
+
+  const sunday = criteriaForDate(state, "2026-08-09", "2026-08-10");
+  assert.equal(sunday.dose, false, "skipped Sunday must not borrow Saturday dose");
+  assert.equal(isFullDay(sunday), false, "skipped Sunday is not a full day");
+  assert.equal(criteriaCount(sunday), 0, "skipped Sunday has zero criteria");
+
+  const saturday = criteriaForDate(state, "2026-08-08", "2026-08-10");
+  assert.equal(isFullDay(saturday), true, "real Saturday log still counts");
+
+  const week = buildJourneyWeek(state, "2026-08-10");
+  const sunCard = week.find((d) => d.dateKey === "2026-08-09");
+  assert.ok(sunCard, "Sunday appears in This week");
+  assert.equal(isFullDay(sunCard!.criteria), false);
+  assert.equal(
+    countFullJourneyDays(week.filter((d) => d.status !== "upcoming")),
+    5,
+    "week full-days = Tue–Sat only (not phantom Sunday)",
+  );
+}
+
+// --- Gap-free legacy history still maps; backfill writes dayCriteriaLog ---
+{
+  resetClock();
+  const full = {
+    dose: true,
+    funbrain: true,
+    puzzles: true,
+    habits: true,
+    pledges: true,
+    pledgeAM: true,
+    pledgePM: true,
+    habitsDone: ["sleep"],
+    completedAt: "2026-08-09T12:00:00.000Z",
+  };
+  // Join Aug 7, today Aug 10 → 3 calendar days before today; 3 history entries.
+  const legacy: GameState = {
+    ...createInitialState(),
+    joinedDate: "2026-08-07",
+    lastActiveDate: "2026-08-10",
+    dayCriteriaLog: {},
+    history: [full, full, full],
+  };
+
+  const aug9 = criteriaForDate(legacy, "2026-08-09", "2026-08-10");
+  assert.equal(isFullDay(aug9), true, "gap-free legacy history still counts");
+
+  const repaired = repairDayCriteriaLogFromHistory(legacy, "2026-08-10");
+  assert.equal(isFullDay(repaired.dayCriteriaLog["2026-08-09"]!), true);
+  assert.equal(isFullDay(repaired.dayCriteriaLog["2026-08-08"]!), true);
+  assert.equal(isFullDay(repaired.dayCriteriaLog["2026-08-07"]!), true);
+
+  // Skip gap: history shorter than calendar span → no backfill / no phantom day.
+  const withGap: GameState = {
+    ...legacy,
+    joinedDate: "2026-08-03",
+    history: [full, full, full, full, full, full], // 6 active, 7 calendar days
+  };
+  assert.equal(
+    isFullDay(criteriaForDate(withGap, "2026-08-09", "2026-08-10")),
+    false,
+    "gapped legacy history must not invent Sunday",
+  );
+  const noBackfill = repairDayCriteriaLogFromHistory(withGap, "2026-08-10");
+  assert.equal(noBackfill.dayCriteriaLog["2026-08-09"], undefined);
 }
 
 // --- mergeDayCriteriaRecord never drops completed pillars ---

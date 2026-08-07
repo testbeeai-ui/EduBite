@@ -28,6 +28,7 @@ import {
   habitsProgress,
   isFullDay,
   mergeDayCriteriaRecord,
+  repairDayCriteriaLogFromHistory,
   repairDayCriteriaLogFromSources,
   repairJoinedDateFromActivity,
   todayCriteria,
@@ -53,11 +54,25 @@ import type {
   AppView,
   GameState,
   ModalState,
+  Notification,
   PledgeType,
 } from "@/lib/types";
 import { todayKey } from "@/lib/utils";
 
 const PUBLIC_VIEWS = new Set<AppView>(["home"]);
+const NOTIFICATION_INBOX_CAP = 20;
+
+function withNotificationFields(
+  note: Notification,
+  defaults?: Partial<Notification>,
+): Notification {
+  return {
+    ...defaults,
+    ...note,
+    createdAt: note.createdAt ?? defaults?.createdAt ?? new Date().toISOString(),
+    read: note.read ?? defaults?.read ?? false,
+  };
+}
 
 type GameAction =
   | { type: "HYDRATE"; payload: GameState }
@@ -94,9 +109,10 @@ type GameAction =
   | { type: "MARK_CHALLENGE_PUZZLE_SUBMITTED"; payload: string }
   | {
       type: "PUSH_NOTIFICATION";
-      payload: { id: string; icon: string; text: string };
+      payload: Notification;
     }
   | { type: "CLEAR_NOTIFICATION"; payload: string }
+  | { type: "MARK_NOTIFICATION_READ"; payload: string }
   | { type: "ROLL_DAY" };
 
 function withDerived(state: GameState): GameState {
@@ -380,13 +396,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         notifications: gyanAlready
           ? state.notifications
           : [
-              {
+              withNotificationFields({
                 id: "gyan-unlock",
                 icon: "✨",
                 text: `New ${FEATURES.gyan.label} card unlocked from today's DailyDose.`,
-              },
+                targetView: "gyan",
+              }),
               ...state.notifications.filter((n) => n.id !== "gyan-unlock"),
-            ].slice(0, 5),
+            ].slice(0, NOTIFICATION_INBOX_CAP),
         dose: {
           ...state.dose,
           running: false,
@@ -630,13 +647,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         gyanUnlockedIds: [...state.gyanUnlockedIds, "velocity-vs-speed"],
         notifications: [
-          {
+          withNotificationFields({
             id: "gyan-unlock",
             icon: "✨",
             text: `New ${FEATURES.gyan.label} card unlocked from today's DailyDose.`,
-          },
+            targetView: "gyan",
+          }),
           ...state.notifications.filter((n) => n.id !== "gyan-unlock"),
-        ].slice(0, 5),
+        ].slice(0, NOTIFICATION_INBOX_CAP),
       };
     }
     case "AWARD_RDM":
@@ -710,9 +728,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         notifications: [
-          note,
+          withNotificationFields(note),
           ...state.notifications.filter((n) => n.id !== note.id),
-        ].slice(0, 5),
+        ].slice(0, NOTIFICATION_INBOX_CAP),
       };
     }
     case "CLEAR_NOTIFICATION": {
@@ -723,6 +741,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         notifications: state.notifications.filter((n) => n.id !== id),
       };
+    }
+    case "MARK_NOTIFICATION_READ": {
+      const id = action.payload;
+      if (!id) return state;
+      let changed = false;
+      const notifications = state.notifications.map((n) => {
+        if (n.id !== id || n.read) return n;
+        changed = true;
+        return { ...n, read: true };
+      });
+      if (!changed) return state;
+      return { ...state, notifications };
     }
     case "ROLL_DAY": {
       // Avoid no-op re-renders (and save spam) when already on App Clock today.
@@ -757,8 +787,10 @@ interface GameContextValue {
   setRdm: (rdm: number) => void;
   /** Enroll in this month's Monthly Challenge (days 1–5). Deducts entry stake on server. */
   enrollMonthlyChallenge: (monthKey: string) => void;
-  /** Remove a flash notification by id (after toast is shown). */
+  /** Remove a notification from the inbox. */
   clearNotification: (id: string) => void;
+  /** Mark a notification as read (keeps it in the inbox). */
+  markNotificationRead: (id: string) => void;
   /** Mark final puzzle submitted for a month key. */
   markChallengePuzzleSubmitted: (monthKey: string) => void;
   toggleHabit: (id: string) => void;
@@ -896,7 +928,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         payload,
         puzzleProgress.attempts,
       );
-      const repaired = repairJoinedDateFromActivity(repairedLogs);
+      const repairedJoin = repairJoinedDateFromActivity(repairedLogs);
+      const repaired = repairDayCriteriaLogFromHistory(repairedJoin, today);
       const hydratedPayload = {
         ...repaired,
         signedIn: true,
@@ -1052,6 +1085,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "CLEAR_NOTIFICATION", payload: id });
   }, []);
 
+  const markNotificationRead = useCallback((id: string) => {
+    if (!id) return;
+    dispatch({ type: "MARK_NOTIFICATION_READ", payload: id });
+  }, []);
+
   const markChallengePuzzleSubmitted = useCallback(
     (monthKey: string) => {
       requireAuth(() =>
@@ -1183,6 +1221,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                   text:
                     data.error ??
                     "Could not enter Monthly Challenge. Please try again.",
+                  targetView: "challenge",
                 },
               });
               return;
@@ -1215,6 +1254,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 text:
                   data.message ??
                   "Thank you! You're in this month's challenge. Good luck!",
+                targetView: "challenge",
               },
             });
           } catch (err) {
@@ -1225,6 +1265,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
                 id: "challenge-enroll",
                 icon: "⚠️",
                 text: "Network error — could not enter the challenge.",
+                targetView: "challenge",
               },
             });
           } finally {
@@ -1258,6 +1299,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     },
     closeReel: () => setModal((m) => ({ ...m, reel: null })),
     clearNotification,
+    markNotificationRead,
     markPuzzleCompleted: () => {
       if (!user) return;
       dispatch({ type: "SET_PUZZLE_COMPLETED", payload: true });

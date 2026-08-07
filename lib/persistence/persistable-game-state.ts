@@ -11,8 +11,8 @@ const GYAN_PERSIST_QUANTUM_MS = 30_000;
 export function toPersistableGameState(state: GameState): GameState {
   return {
     ...state,
-    // Toasts are ephemeral — never drive cloud writes.
-    notifications: [],
+    // Keep a capped inbox so notifications survive reload; toast UI is separate.
+    notifications: (state.notifications ?? []).slice(0, 20),
     gyanTimeMs:
       Math.floor(state.gyanTimeMs / GYAN_PERSIST_QUANTUM_MS) *
       GYAN_PERSIST_QUANTUM_MS,
