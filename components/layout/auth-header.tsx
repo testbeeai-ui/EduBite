@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { LogIn, User } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { useGame } from "@/lib/store/game-provider";
@@ -13,6 +14,7 @@ export function AuthHeaderActions({ streak }: AuthHeaderActionsProps) {
   const { user, openLogin } = useAuth();
   const { activeView, setActiveView } = useGame();
   const signedIn = Boolean(user);
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   const displayName =
     (user?.user_metadata?.full_name as string | undefined) ||
@@ -20,6 +22,7 @@ export function AuthHeaderActions({ streak }: AuthHeaderActionsProps) {
     user?.email?.split("@")[0] ||
     "Student";
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
+  const showAvatar = Boolean(avatarUrl) && !avatarFailed;
   const initial = (displayName[0] ?? "?").toUpperCase();
   // Navbar: first word only, hard cap so it never crowds AI / nav.
   const shortName = (() => {
@@ -45,11 +48,12 @@ export function AuthHeaderActions({ streak }: AuthHeaderActionsProps) {
             isProfileActive && "border-teal text-teal ring-1 ring-teal/30 bg-teal/10",
           )}
         >
-          {avatarUrl ? (
+          {showAvatar ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={avatarUrl}
               alt=""
+              onError={() => setAvatarFailed(true)}
               className="w-7 h-7 rounded-full object-cover shrink-0"
             />
           ) : (
