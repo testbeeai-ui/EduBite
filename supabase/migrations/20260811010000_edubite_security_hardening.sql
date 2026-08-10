@@ -597,8 +597,16 @@ DECLARE
   last_day date;
   current_payload jsonb;
   criteria_log jsonb;
+  history jsonb;
+  join_date date;
+  days_since_join integer;
+  history_len integer;
+  use_legacy_history boolean := false;
   cursor_day date;
+  day_key text;
   criteria jsonb;
+  days_before integer;
+  history_index integer;
   run integer := 0;
   best_run integer := 0;
   inserted_at timestamptz;
@@ -648,10 +656,41 @@ BEGIN
       THEN current_payload->'dayCriteriaLog'
     ELSE '{}'::jsonb
   END;
+  -- Match client criteriaForDate: gap-free legacy history still counts when
+  -- dayCriteriaLog is sparse (non-admin saves only persist today's log entry).
+  history := CASE
+    WHEN jsonb_typeof(current_payload->'history') = 'array'
+      THEN current_payload->'history'
+    ELSE '[]'::jsonb
+  END;
+  join_date := CASE
+    WHEN coalesce(current_payload->>'joinedDate', '') ~ '^\d{4}-\d{2}-\d{2}$'
+      THEN (current_payload->>'joinedDate')::date
+    ELSE effective_date
+  END;
+  IF join_date > effective_date THEN
+    join_date := effective_date;
+  END IF;
+  days_since_join := effective_date - join_date;
+  history_len := jsonb_array_length(history);
+  use_legacy_history := days_since_join > 0 AND history_len = days_since_join;
 
   cursor_day := date_trunc('month', effective_date)::date;
   WHILE cursor_day <= last_day LOOP
-    criteria := coalesce(criteria_log->to_char(cursor_day, 'YYYY-MM-DD'), '{}'::jsonb);
+    day_key := to_char(cursor_day, 'YYYY-MM-DD');
+    criteria := criteria_log->day_key;
+    IF criteria IS NULL
+      AND use_legacy_history
+      AND cursor_day < effective_date
+      AND cursor_day >= join_date
+    THEN
+      days_before := effective_date - cursor_day;
+      history_index := history_len - days_before;
+      IF history_index >= 0 AND history_index < history_len THEN
+        criteria := history->history_index;
+      END IF;
+    END IF;
+    criteria := coalesce(criteria, '{}'::jsonb);
     IF coalesce(criteria->>'dose', 'false') = 'true'
       AND coalesce(criteria->>'funbrain', 'false') = 'true'
       AND coalesce(criteria->>'puzzles', 'false') = 'true'
@@ -755,4 +794,4 @@ COMMENT ON FUNCTION public.edubite_save_game_state(jsonb) IS
 COMMENT ON FUNCTION public.edubite_enroll_monthly_challenge(text, text, text) IS
   'Atomic Monthly Challenge enrollment and RDM stake deduction.';
 COMMENT ON FUNCTION public.edubite_submit_monthly_challenge(text, text, text, text) IS
-  'Atomic final entry with verified enrollment/date/streak checks.';
+  'Atomic final entry with verified enrollment/date/streak checks (dayCriteriaLog, gap-free legacy history fallback).';
