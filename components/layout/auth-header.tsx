@@ -24,11 +24,6 @@ export function AuthHeaderActions({ streak }: AuthHeaderActionsProps) {
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
   const showAvatar = Boolean(avatarUrl) && !avatarFailed;
   const initial = (displayName[0] ?? "?").toUpperCase();
-  // Navbar: first word only, hard cap so it never crowds AI / nav.
-  const shortName = (() => {
-    const first = displayName.trim().split(/\s+/)[0] || displayName;
-    return first.length > 10 ? `${first.slice(0, 9)}…` : first;
-  })();
 
   const isProfileActive = activeView === "profile";
 
@@ -43,7 +38,7 @@ export function AuthHeaderActions({ streak }: AuthHeaderActionsProps) {
           title={displayName}
           onClick={() => setActiveView("profile")}
           className={cn(
-            "flex min-w-0 max-w-[7.5rem] items-center gap-1.5 pl-1 pr-2 py-1 rounded-full border transition-all cursor-pointer",
+            "flex items-center justify-center rounded-full border p-0.5 transition-all cursor-pointer",
             "bg-[var(--surface)] border-[var(--line)] hover:border-teal/50 hover:bg-teal/[0.06]",
             isProfileActive && "border-teal text-teal ring-1 ring-teal/30 bg-teal/10",
           )}
@@ -54,16 +49,13 @@ export function AuthHeaderActions({ streak }: AuthHeaderActionsProps) {
               src={avatarUrl}
               alt=""
               onError={() => setAvatarFailed(true)}
-              className="w-7 h-7 rounded-full object-cover shrink-0"
+              className="h-9 w-9 rounded-full object-cover shrink-0 sm:h-10 sm:w-10"
             />
           ) : (
-            <span className="w-7 h-7 rounded-full bg-gradient-to-br from-purple to-pink flex items-center justify-center font-display font-bold text-[11px] shrink-0 text-white shadow-sm">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple to-pink font-display text-sm font-bold text-white shadow-sm sm:h-10 sm:w-10 sm:text-[15px]">
               {initial}
             </span>
           )}
-          <span className="hidden md:inline min-w-0 flex-1 font-display font-semibold text-xs truncate">
-            {shortName}
-          </span>
         </button>
       ) : (
         <button
