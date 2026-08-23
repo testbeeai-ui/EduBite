@@ -27,6 +27,10 @@ import type {
 } from "@/lib/brain-gym/types";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { useGame } from "@/lib/store/game-provider";
+import {
+  EMBED_PROGRESS_MESSAGE,
+  postToNativeHost,
+} from "@/lib/brain-gym/embed-bridge";
 
 interface BrainGymContextValue {
   progress: BrainGymProgress;
@@ -184,6 +188,7 @@ export function BrainGymProvider({ children }: { children: ReactNode }) {
           } else if (rdmGain > 0) {
             awardRDM(rdmGain);
           }
+          postToNativeHost({ type: EMBED_PROGRESS_MESSAGE });
           return;
         }
       })();
