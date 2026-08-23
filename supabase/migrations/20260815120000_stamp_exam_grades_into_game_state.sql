@@ -31,6 +31,8 @@ DECLARE
   next_payload jsonb := p_saved;
   dose_log jsonb;
   prev_high integer := 0;
+  keep_dose_correct integer := 0;
+  keep_fun_score integer := 0;
 BEGIN
   IF p_saved IS NULL OR jsonb_typeof(p_saved) <> 'object' THEN
     RETURN p_saved;
@@ -92,25 +94,62 @@ BEGIN
   ) graded;
 
   IF coalesce(p_saved#>>'{dose,completed}', 'false') = 'true' AND dose_total > 0 THEN
-    next_payload := jsonb_set(next_payload, '{dose,correct}', to_jsonb(dose_correct), true);
-    IF dose_class = '11' THEN
-      next_payload := jsonb_set(next_payload, '{dose,correct11}', to_jsonb(dose_correct), true);
-    ELSIF dose_class = '12' THEN
-      next_payload := jsonb_set(next_payload, '{dose,correct12}', to_jsonb(dose_correct), true);
+    -- Regrade only when a full answer set is present. Empty/partial follow-up
+    -- saves still have completed=true (client merge) and would persist 0.
+    IF jsonb_array_length(dose_answers) >= dose_total THEN
+      next_payload := jsonb_set(next_payload, '{dose,correct}', to_jsonb(dose_correct), true);
+      IF dose_class = '11' THEN
+        next_payload := jsonb_set(next_payload, '{dose,correct11}', to_jsonb(dose_correct), true);
+      ELSIF dose_class = '12' THEN
+        next_payload := jsonb_set(next_payload, '{dose,correct12}', to_jsonb(dose_correct), true);
+      END IF;
+      next_payload := jsonb_set(next_payload, '{dose,answerCorrect}', dose_flags, true);
+      dose_log := jsonb_set(
+        dose_log,
+        ARRAY[today_key],
+        jsonb_build_object(
+          'correct', dose_correct,
+          'total', dose_total,
+          'pct', (round((100.0 * dose_correct) / dose_total))::integer,
+          'completed', true,
+          'classLevel', coalesce(nullif(dose_class, ''), '11')
+        ),
+        true
+      );
+    ELSE
+      IF coalesce(p_prev#>>'{dose,correct}', '') ~ '^\d+$' THEN
+        keep_dose_correct := (p_prev#>>'{dose,correct}')::integer;
+      END IF;
+      IF coalesce(next_payload#>>'{dose,correct}', '') ~ '^\d+$' THEN
+        keep_dose_correct := greatest(
+          keep_dose_correct,
+          (next_payload#>>'{dose,correct}')::integer
+        );
+      END IF;
+      IF keep_dose_correct > 0 THEN
+        next_payload := jsonb_set(
+          next_payload,
+          '{dose,correct}',
+          to_jsonb(keep_dose_correct),
+          true
+        );
+        IF dose_class = '11' THEN
+          next_payload := jsonb_set(
+            next_payload,
+            '{dose,correct11}',
+            to_jsonb(keep_dose_correct),
+            true
+          );
+        ELSIF dose_class = '12' THEN
+          next_payload := jsonb_set(
+            next_payload,
+            '{dose,correct12}',
+            to_jsonb(keep_dose_correct),
+            true
+          );
+        END IF;
+      END IF;
     END IF;
-    next_payload := jsonb_set(next_payload, '{dose,answerCorrect}', dose_flags, true);
-    dose_log := jsonb_set(
-      dose_log,
-      ARRAY[today_key],
-      jsonb_build_object(
-        'correct', dose_correct,
-        'total', dose_total,
-        'pct', (round((100.0 * dose_correct) / dose_total))::integer,
-        'completed', true,
-        'classLevel', coalesce(nullif(dose_class, ''), '11')
-      ),
-      true
-    );
   END IF;
 
   fun_answers := coalesce(p_saved#>'{funbrain,answers}', '[]'::jsonb);
@@ -139,7 +178,26 @@ BEGIN
     answer_index := answer_index + 1;
   END LOOP;
 
-  IF coalesce(p_saved#>>'{funbrain,completed}', 'false') = 'true' THEN
+  IF coalesce(p_prev#>>'{funbrain,score}', '') ~ '^\d+$' THEN
+    keep_fun_score := (p_prev#>>'{funbrain,score}')::integer;
+  END IF;
+  IF coalesce(p_saved#>>'{funbrain,score}', '') ~ '^\d+$' THEN
+    keep_fun_score := greatest(
+      keep_fun_score,
+      (p_saved#>>'{funbrain,score}')::integer
+    );
+  END IF;
+
+  -- Regrade only from a real answer payload. Empty/partial follow-ups would
+  -- force score 0 and erase the official result the wrapper is meant to stamp.
+  IF coalesce(p_saved#>>'{funbrain,completed}', 'false') = 'true'
+    AND jsonb_array_length(fun_answers) > 0
+    AND (
+      jsonb_array_length(fun_answers) >= 6
+      OR keep_fun_score = 0
+      OR fun_score >= keep_fun_score
+    )
+  THEN
     prev_high := CASE
       WHEN coalesce(p_prev#>>'{funbrain,highScore}', '') ~ '^\d+$'
         THEN (p_prev#>>'{funbrain,highScore}')::integer

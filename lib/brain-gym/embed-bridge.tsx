@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { isTrustedEmbedSessionOrigin } from "@/lib/brain-gym/embed-trust";
 
 export const EMBED_SESSION_MESSAGE = "edubite-embed-session" as const;
 export const EMBED_READY_MESSAGE = "edubite-embed-ready" as const;
@@ -101,11 +102,23 @@ export function BrainGymEmbedBridge({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const isTrustedSessionEvent = (event: MessageEvent) =>
+      isTrustedEmbedSessionOrigin(
+        event.origin,
+        window.location.origin,
+        Boolean(
+          (window as Window & { ReactNativeWebView?: unknown })
+            .ReactNativeWebView,
+        ),
+      );
+
     const onWindowMessage = (event: MessageEvent) => {
+      if (!isTrustedSessionEvent(event)) return;
       void handlePayload(event.data);
     };
     const onDocumentMessage = (event: Event) => {
       const custom = event as MessageEvent;
+      if (!isTrustedSessionEvent(custom)) return;
       void handlePayload(custom.data);
     };
 

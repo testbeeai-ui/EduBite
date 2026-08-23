@@ -24,10 +24,13 @@ export default function BrainGymEmbedPage() {
     document.addEventListener("visibilitychange", onVisibility);
 
     // Observe game popup open/close via GameShell backdrop (z-[100] dialog)
+    let dialogOpen = false;
     const observer = new MutationObserver(() => {
       const open = Boolean(
         document.querySelector('[role="dialog"][aria-modal="true"]'),
       );
+      if (open === dialogOpen) return;
+      dialogOpen = open;
       postToNativeHost({
         type: open ? EMBED_GAME_OPEN_MESSAGE : EMBED_GAME_CLOSE_MESSAGE,
       });
