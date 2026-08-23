@@ -3,20 +3,19 @@ import { isAdminEmail } from "@/lib/admin/allowlist";
 import { allowProgressWrite } from "@/lib/api/rate-limit";
 import { getRequestUser } from "@/lib/auth/server";
 import {
-  buildChallengeProgress,
   getChallengeMonthMeta,
-  isEnrolledForChallengeMonth,
   MONTHLY_CHALLENGE_STREAK_REQUIRED,
   MONTHLY_CHALLENGE_WINNER_SLOTS,
 } from "@/lib/challenge/monthly";
-import { readNormalizedGameState } from "@/lib/db/supabase-progress";
+import {
+  listChallengeWinners,
+  submitChallengeAtomically,
+} from "@/lib/db/monthly-challenge";
 import { createEdubiteSupabaseServer } from "@/lib/supabase/server";
 import { realTodayKey } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-const TABLE = "edubite_monthly_challenge_entries";
 
 type WinnerRow = {
   display_name: string;
@@ -73,22 +72,10 @@ export async function GET(request: Request) {
         : meta.monthKey;
 
     const client = await createEdubiteSupabaseServer();
-
-    const { data: winnersRaw, error: winnersError } = await client
-      .from(TABLE)
-      .select("display_name, submitted_at")
-      .eq("month_key", monthKey)
-      .eq("is_winner", true)
-      .order("submitted_at", { ascending: true })
-      .limit(MONTHLY_CHALLENGE_WINNER_SLOTS);
-
-    if (winnersError) {
-      console.error("[api/challenge/monthly GET winners]", winnersError);
-      return NextResponse.json({ error: "Server error" }, { status: 500 });
-    }
+    const winnersRaw = await listChallengeWinners(monthKey);
 
     const { data: own, error: ownError } = await client
-      .from(TABLE)
+      .from("edubite_monthly_challenge_entries")
       .select("submitted_at")
       .eq("month_key", monthKey)
       .eq("user_id", user.id)
@@ -187,71 +174,41 @@ export async function POST(request: Request) {
       );
     }
 
-    const gameState = await readNormalizedGameState(user.id);
-    if (!gameState) {
-      return NextResponse.json({ error: "No progress found" }, { status: 400 });
-    }
-
-    if (
-      !isEnrolledForChallengeMonth(
-        monthKey,
-        gameState.challengeEnrolledMonthKey,
-        gameState.challengeEnrolledMonths,
-      )
-    ) {
-      return NextResponse.json(
-        { error: "You must enroll in this month's challenge first" },
-        { status: 403 },
-      );
-    }
-
-    const progress = buildChallengeProgress(gameState, dateKey);
-    if (!progress.eligibleForPuzzle) {
-      return NextResponse.json(
-        {
-          error: `Need a ${MONTHLY_CHALLENGE_STREAK_REQUIRED}-day full journey streak (complete all 5 daily tasks) to enter the final puzzle`,
-        },
-        { status: 403 },
-      );
-    }
-
-    const client = await createEdubiteSupabaseServer();
-    const displayName = displayNameFromUser(user);
-
-    const { data, error } = await client
-      .from(TABLE)
-      .insert({
-        user_id: user.id,
-        month_key: monthKey,
-        answer,
-        display_name: displayName,
-      })
-      .select("submitted_at")
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        return NextResponse.json(
-          { error: "You already submitted an entry this month" },
-          { status: 409 },
-        );
-      }
-      // Table may not exist yet in local/dev — surface a clear message
-      console.error("[api/challenge/monthly POST]", error);
-      return NextResponse.json(
-        { error: error.message || "Server error" },
-        { status: 500 },
-      );
-    }
+    const result = await submitChallengeAtomically({
+      monthKey,
+      answer,
+      displayName: displayNameFromUser(user),
+      dateKey: admin ? dateKey : undefined,
+    });
 
     return NextResponse.json({
       ok: true,
-      submittedAt: data.submitted_at,
+      submittedAt: result.submittedAt,
+      state: result.state,
       message:
         "Entry recorded. Edubite will verify correctness and notify winners on WhatsApp and email.",
     });
   } catch (err) {
     console.error("[api/challenge/monthly POST]", err);
+    const message = err instanceof Error ? err.message : "Server error";
+    if (message.includes("already submitted")) {
+      return NextResponse.json({ error: message }, { status: 409 });
+    }
+    if (
+      message.includes("verified enrollment") ||
+      message.includes("15-day") ||
+      message.includes("not open") ||
+      message.includes("invalid challenge month")
+    ) {
+      return NextResponse.json(
+        {
+          error: message.includes("15-day")
+            ? `Need a ${MONTHLY_CHALLENGE_STREAK_REQUIRED}-day full journey streak (complete all 5 daily tasks) to enter the final puzzle`
+            : message,
+        },
+        { status: 403 },
+      );
+    }
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

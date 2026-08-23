@@ -7,6 +7,7 @@ import {
   criteriaForDate,
   isFullDay,
   mergeDayCriteriaRecord,
+  repairDayCriteriaLogFromHistory,
   repairDayCriteriaLogFromSources,
 } from "@/lib/gamification";
 import { createInitialState } from "@/lib/gamification";
@@ -177,6 +178,52 @@ function dbLikeState(): GameState {
     5,
     "week full-days = Tue–Sat only (not phantom Sunday)",
   );
+}
+
+// --- Gap-free legacy history still maps; backfill writes dayCriteriaLog ---
+{
+  resetClock();
+  const full = {
+    dose: true,
+    funbrain: true,
+    puzzles: true,
+    habits: true,
+    pledges: true,
+    pledgeAM: true,
+    pledgePM: true,
+    habitsDone: ["sleep"],
+    completedAt: "2026-08-09T12:00:00.000Z",
+  };
+  // Join Aug 7, today Aug 10 → 3 calendar days before today; 3 history entries.
+  const legacy: GameState = {
+    ...createInitialState(),
+    joinedDate: "2026-08-07",
+    lastActiveDate: "2026-08-10",
+    dayCriteriaLog: {},
+    history: [full, full, full],
+  };
+
+  const aug9 = criteriaForDate(legacy, "2026-08-09", "2026-08-10");
+  assert.equal(isFullDay(aug9), true, "gap-free legacy history still counts");
+
+  const repaired = repairDayCriteriaLogFromHistory(legacy, "2026-08-10");
+  assert.equal(isFullDay(repaired.dayCriteriaLog["2026-08-09"]!), true);
+  assert.equal(isFullDay(repaired.dayCriteriaLog["2026-08-08"]!), true);
+  assert.equal(isFullDay(repaired.dayCriteriaLog["2026-08-07"]!), true);
+
+  // Skip gap: history shorter than calendar span → no backfill / no phantom day.
+  const withGap: GameState = {
+    ...legacy,
+    joinedDate: "2026-08-03",
+    history: [full, full, full, full, full, full], // 6 active, 7 calendar days
+  };
+  assert.equal(
+    isFullDay(criteriaForDate(withGap, "2026-08-09", "2026-08-10")),
+    false,
+    "gapped legacy history must not invent Sunday",
+  );
+  const noBackfill = repairDayCriteriaLogFromHistory(withGap, "2026-08-10");
+  assert.equal(noBackfill.dayCriteriaLog["2026-08-09"], undefined);
 }
 
 // --- mergeDayCriteriaRecord never drops completed pillars ---

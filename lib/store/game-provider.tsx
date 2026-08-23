@@ -28,6 +28,7 @@ import {
   habitsProgress,
   isFullDay,
   mergeDayCriteriaRecord,
+  repairDayCriteriaLogFromHistory,
   repairDayCriteriaLogFromSources,
   repairJoinedDateFromActivity,
   todayCriteria,
@@ -927,7 +928,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         payload,
         puzzleProgress.attempts,
       );
-      const repaired = repairJoinedDateFromActivity(repairedLogs);
+      const repairedJoin = repairJoinedDateFromActivity(repairedLogs);
+      const repaired = repairDayCriteriaLogFromHistory(repairedJoin, today);
       const hydratedPayload = {
         ...repaired,
         signedIn: true,

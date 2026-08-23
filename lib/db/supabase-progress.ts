@@ -9,7 +9,6 @@ import {
 } from "@/lib/challenge/monthly";
 import {
   listEnrollmentMonthKeysForUser,
-  upsertChallengeEnrollment,
 } from "@/lib/db/monthly-challenge";
 import {
   normalizeBrainGymProgress,
@@ -174,11 +173,9 @@ export async function writeNormalizedGameState(
   if (readError) throw new Error(readError.message);
 
   let normalized = incoming;
-  let prevForEnroll: GameState | null = null;
   if (existingRow?.payload) {
     try {
       const prev = normalizeGameState(existingRow.payload as unknown);
-      prevForEnroll = prev;
       const months = mergeEnrolledMonths(
         incoming.challengeEnrolledMonths,
         prev.challengeEnrolledMonths,
@@ -329,38 +326,11 @@ export async function writeNormalizedGameState(
     }
   }
 
-  const { error } = await client.from(EDUBITE_GAME_STATE_TABLE).upsert(
-    {
-      user_id: userId,
-      payload: normalized,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" },
-  );
+  const { data, error } = await client.rpc("edubite_save_game_state", {
+    p_payload: normalized,
+  });
   if (error) throw new Error(error.message);
-
-  // Roster sync only when enrollment months actually change — not on every save.
-  const enrollKey = normalized.challengeEnrolledMonthKey;
-  if (enrollKey) {
-    const prevMonths = prevForEnroll?.challengeEnrolledMonths ?? [];
-    const monthsGrew = normalized.challengeEnrolledMonths.some(
-      (m) => !prevMonths.includes(m),
-    );
-    const keyChanged =
-      !prevForEnroll ||
-      prevForEnroll.challengeEnrolledMonthKey !== enrollKey;
-    if (!prevForEnroll || monthsGrew || keyChanged) {
-      void upsertChallengeEnrollment({
-        userId,
-        monthKey: enrollKey,
-        displayName: "Learner",
-        stakeRdm: getMonthlyChallengeEntryStakeRdm(),
-        overwrite: false,
-      });
-    }
-  }
-
-  return normalized;
+  return normalizeGameState(data);
 }
 
 export async function readNormalizedBrainGym(

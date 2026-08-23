@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Award,
@@ -16,12 +17,16 @@ import {
 import { Card } from "@/components/ui/card";
 import { SectionTitle } from "@/components/ui/modal";
 import { useAuth } from "@/lib/auth/auth-provider";
+import { formatStudentId } from "@/lib/identity/student-id";
+import { supabase } from "@/integrations/supabase/client";
 import { useGame } from "@/lib/store/game-provider";
 import { formatRdm, formatShortDate } from "@/lib/utils";
 
 export function ProfileView() {
   const { user, signOut } = useAuth();
   const { state, levelInfo, habitsStats, achievements, setActiveView } = useGame();
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  const [studentCode, setStudentCode] = useState<string | null>(null);
 
   const displayName =
     (user?.user_metadata?.full_name as string | undefined) ||
@@ -29,7 +34,39 @@ export function ProfileView() {
     user?.email?.split("@")[0] ||
     "Student";
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
+  const showAvatar = Boolean(avatarUrl) && !avatarFailed;
   const initial = (displayName[0] ?? "?").toUpperCase();
+  const studentId = formatStudentId(studentCode);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user?.id) {
+      setStudentCode(null);
+      return;
+    }
+
+    void (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("student_code")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      let code =
+        data && typeof data.student_code === "string" ? data.student_code : null;
+
+      if (!code?.trim()) {
+        const { data: minted } = await supabase.rpc("ensure_my_student_code");
+        if (typeof minted === "string") code = minted;
+      }
+
+      if (!cancelled) setStudentCode(code);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const joinedFormatted = state.joinedDate
     ? formatShortDate(state.joinedDate)
@@ -64,11 +101,12 @@ export function ProfileView() {
         <div className="relative flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
           {/* Avatar */}
           <div className="relative shrink-0">
-            {avatarUrl ? (
+            {showAvatar ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={avatarUrl}
-                alt={displayName}
+                alt=""
+                onError={() => setAvatarFailed(true)}
                 className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover border-2 border-teal/40 shadow-xl"
               />
             ) : (
@@ -91,6 +129,14 @@ export function ProfileView() {
                 <p className="text-xs sm:text-sm font-mono text-[var(--text-dim)] mt-0.5 truncate">
                   {user?.email ?? "Guest Learner"}
                 </p>
+                {studentId ? (
+                  <p className="text-xs sm:text-sm font-semibold text-teal mt-1">
+                    Student ID:{" "}
+                    <span className="font-mono font-bold tracking-wide">
+                      {studentId}
+                    </span>
+                  </p>
+                ) : null}
               </div>
 
               <button
