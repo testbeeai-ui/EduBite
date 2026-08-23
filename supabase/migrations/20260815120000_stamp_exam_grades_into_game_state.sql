@@ -224,6 +224,20 @@ BEGIN
       to_jsonb(keep_fun_score),
       true
     );
+    prev_high := CASE
+      WHEN coalesce(p_prev#>>'{funbrain,highScore}', '') ~ '^\d+$'
+        THEN (p_prev#>>'{funbrain,highScore}')::integer
+      ELSE 0
+    END;
+    IF coalesce(p_saved#>>'{funbrain,highScore}', '') ~ '^\d+$' THEN
+      prev_high := greatest(prev_high, (p_saved#>>'{funbrain,highScore}')::integer);
+    END IF;
+    next_payload := jsonb_set(
+      next_payload,
+      '{funbrain,highScore}',
+      to_jsonb(greatest(prev_high, keep_fun_score)),
+      true
+    );
   END IF;
 
   RETURN jsonb_set(next_payload, '{doseDayLog}', dose_log, true);
