@@ -215,6 +215,15 @@ BEGIN
       to_jsonb(greatest(prev_high, fun_score)),
       true
     );
+  ELSIF coalesce(p_saved#>>'{funbrain,completed}', 'false') = 'true'
+    AND keep_fun_score > 0
+  THEN
+    next_payload := jsonb_set(
+      next_payload,
+      '{funbrain,score}',
+      to_jsonb(keep_fun_score),
+      true
+    );
   END IF;
 
   RETURN jsonb_set(next_payload, '{doseDayLog}', dose_log, true);
