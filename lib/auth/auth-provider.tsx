@@ -155,6 +155,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setAuthError(null);
         setSigningIn(false);
         runPending(pendingRef);
+        const postLogin = window.sessionStorage.getItem("edubite.post-login");
+        if (postLogin === "/delete-account") {
+          window.sessionStorage.removeItem("edubite.post-login");
+          router.replace("/delete-account");
+          return;
+        }
         if (window.location.pathname === "/login") {
           router.replace("/");
         }

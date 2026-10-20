@@ -24,6 +24,12 @@ export function LegalLinks({
       <Link href="/terms" className={linkClass}>
         Terms of use
       </Link>
+      <span aria-hidden className={tone === "on-dark" ? "text-slate-600" : "text-[var(--text-dim)]"}>
+        ·
+      </span>
+      <Link href="/delete-account" className={linkClass}>
+        Delete account
+      </Link>
     </nav>
   );
 }

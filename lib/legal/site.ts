@@ -1,6 +1,6 @@
 /** Public legal pages. These must stay reachable without signing in. */
 
-export const LEGAL_PATHS = ["/privacy", "/terms"] as const;
+export const LEGAL_PATHS = ["/privacy", "/terms", "/delete-account"] as const;
 
 export const LEGAL = {
   product: "EduBite",

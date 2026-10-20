@@ -176,6 +176,8 @@
   "",
   "11. Account and Data Deletion",
   "Signing out ends the session on that device. It does not delete the account.",
+  "In the app, open Profile and choose Delete account.",
+  "On the web, use https://edubite1.vercel.app/delete-account",
   "To request deletion of an EduBite account and the personal information tied to it, email lsn@eyemagnett.com from the Google account used on EduBite.",
   "A parent or guardian may use the same address to request deletion for a student.",
   "Upon receiving a valid deletion request, we will delete or anonymise the associated personal data, except information that we are legally permitted or required to retain. Any retained information will be subject to the applicable retention requirement.",
