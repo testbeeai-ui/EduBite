@@ -2,6 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
+import { LegalLinks } from "@/components/legal/legal-links";
 import { NAV_ITEMS } from "@/data/config";
 import { NavEmoji } from "@/components/layout/top-nav";
 import { useAuth } from "@/lib/auth/auth-provider";
@@ -237,6 +238,9 @@ export function BurgerPanel({
               >
                 {signedIn ? "Sign out" : "Sign in"}
               </button>
+              <div className="px-3 py-2" onClick={onClose}>
+                <LegalLinks />
+              </div>
             </div>
           </motion.aside>
         </>

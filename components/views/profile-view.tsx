@@ -14,6 +14,7 @@ import {
   Trophy,
   Zap,
 } from "lucide-react";
+import { LegalLinks } from "@/components/legal/legal-links";
 import { Card } from "@/components/ui/card";
 import { SectionTitle } from "@/components/ui/modal";
 import { useAuth } from "@/lib/auth/auth-provider";
@@ -315,6 +316,13 @@ export function ProfileView() {
           </p>
         </button>
       </div>
+
+      <Card className="p-4 border-[var(--line)] bg-[var(--surface)]">
+        <p className="text-xs font-mono uppercase tracking-widest text-[var(--text-dim)]">
+          Legal
+        </p>
+        <LegalLinks className="mt-2 text-sm" />
+      </Card>
     </div>
   );
 }

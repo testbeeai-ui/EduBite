@@ -12,6 +12,7 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { isPublicLegalPath } from "@/lib/legal/site";
 import { VIEW_TO_PATH, PATH_TO_VIEW } from "@/lib/routes";
 import { DOSE_QUESTION_COUNT, DOSE_DURATION_SEC, FEATURES, FUNBRAIN_DURATION_SEC } from "@/data/config";
 import { HABIT_DEFINITIONS } from "@/data/habits";
@@ -881,6 +882,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   // re-run (and flash a skeleton) on every pathname change.
   useEffect(() => {
     if (authLoading || user) return;
+    if (isPublicLegalPath(pathname)) return;
     if (!PUBLIC_VIEWS.has(PATH_TO_VIEW[pathname] ?? "home")) {
       router.push("/");
     }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { LegalLinks } from "@/components/legal/legal-links";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/auth-provider";
 
@@ -133,6 +134,7 @@ export function LoginPage() {
             Not now
           </Button>
         </div>
+        <LegalLinks tone="on-dark" className="mt-4 justify-center" />
       </div>
     </div>,
     document.body,

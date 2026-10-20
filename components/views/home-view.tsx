@@ -2,6 +2,7 @@
 
 import { Flame, Sparkles, Sprout } from "lucide-react";
 import { ConsistencyCorner } from "@/components/home/consistency-corner";
+import { LegalLinks } from "@/components/legal/legal-links";
 import { EdublastBanner } from "@/components/home/edublast-banner";
 import { RewardsChallengeCard } from "@/components/home/rewards-challenge-card";
 import { StreakMeter } from "@/components/home/streak-meter";
@@ -119,6 +120,7 @@ export function HomeView() {
 
         <ConsistencyCorner />
         <StreakMeter />
+        <LegalLinks className="justify-center pt-2" />
       </div>
     </div>
   );
