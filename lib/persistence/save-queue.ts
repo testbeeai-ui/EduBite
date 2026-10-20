@@ -13,17 +13,31 @@ type BoundJob<T> = { value: T; userId: string };
 export function createSaveQueue<T>(
   write: (value: T, userId: string) => Promise<SaveResult>,
   getUserId: () => string | null,
-  options?: { debounceMs?: number },
+  options?: { debounceMs?: number; isSuspended?: () => boolean },
 ) {
   const debounceMs = options?.debounceMs ?? 1500;
+  const isSuspended = options?.isSuspended;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pending: BoundJob<T> | null = null;
   let inFlight = false;
   let generation = 0;
   let lastSavedJson = "";
 
+  const scheduleRetry = () => {
+    if (timer) return;
+    timer = setTimeout(() => {
+      timer = null;
+      void flush();
+    }, debounceMs);
+  };
+
   const flush = async (): Promise<SaveResult> => {
     if (inFlight || pending === null) return { ok: true };
+    // Leave the payload queued while account deletion is pausing writes.
+    if (isSuspended?.()) {
+      scheduleRetry();
+      return { ok: false, error: "Saves paused" };
+    }
     const job = pending;
     pending = null;
 
@@ -51,6 +65,7 @@ export function createSaveQueue<T>(
         lastSavedJson = serialized;
       } else if (pending === null && myGen === generation) {
         pending = job;
+        if (isSuspended?.()) scheduleRetry();
       }
     } finally {
       inFlight = false;

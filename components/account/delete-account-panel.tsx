@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { STORAGE_KEY } from "@/data/config";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { LEGAL } from "@/lib/legal/site";
+import {
+  drainProgressWrites,
+  resumeProgressWrites,
+  suspendProgressWrites,
+} from "@/lib/persistence/progress-write-gate";
 import { supabase } from "@/integrations/supabase/client";
 
 export function DeleteAccountPanel() {
@@ -15,6 +20,7 @@ export function DeleteAccountPanel() {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const deleteStartedRef = useRef(false);
 
   const startSignIn = () => {
     window.sessionStorage.setItem("edubite.post-login", "/delete-account");
@@ -22,15 +28,32 @@ export function DeleteAccountPanel() {
   };
 
   const deleteAccount = async () => {
-    if (!user) return;
+    if (!user || deleteStartedRef.current) return;
+    deleteStartedRef.current = true;
     setDeleting(true);
     setError(null);
     const userId = user.id;
-    const { error: rpcError } = await supabase.rpc("edubite_delete_my_account");
-    if (rpcError) {
-      setDeleting(false);
-      setError(rpcError.message);
+    // GameProvider stays mounted and will upsert over a just-deleted row.
+    // Pause new saves, let any request already on the wire finish, then delete.
+    suspendProgressWrites();
+    let deleted = false;
+    try {
+      await drainProgressWrites();
+      const { error: rpcError } = await supabase.rpc("edubite_delete_my_account");
+      if (rpcError) {
+        setError(rpcError.message);
+        return;
+      }
+      deleted = true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete account");
       return;
+    } finally {
+      if (!deleted) {
+        deleteStartedRef.current = false;
+        resumeProgressWrites();
+        setDeleting(false);
+      }
     }
     window.localStorage.removeItem(`${STORAGE_KEY}:user:${userId}`);
     window.localStorage.removeItem(`edubite.braingym.v1:user:${userId}`);
