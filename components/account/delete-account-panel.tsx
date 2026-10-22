@@ -2,14 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { STORAGE_KEY } from "@/data/config";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { LEGAL } from "@/lib/legal/site";
 import { supabase } from "@/integrations/supabase/client";
 
 export function DeleteAccountPanel() {
-  const router = useRouter();
   const { user, loading, signInWithGoogle, signOut } = useAuth();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -35,10 +33,9 @@ export function DeleteAccountPanel() {
     window.localStorage.removeItem(`${STORAGE_KEY}:user:${userId}`);
     window.localStorage.removeItem(`edubite.braingym.v1:user:${userId}`);
     window.localStorage.removeItem(`edubite.braingym.pending.v1:user:${userId}`);
-    await signOut();
     setDone(true);
     setDeleting(false);
-    router.replace("/");
+    await signOut();
   };
 
   return (
