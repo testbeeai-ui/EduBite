@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bell, Menu } from "lucide-react";
 import { AuthHeaderActions } from "@/components/layout/auth-header";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { BurgerPanel } from "@/components/layout/burger-panel";
 import { FlashToast } from "@/components/layout/flash-toast";
 import { NotificationsPanel } from "@/components/layout/notifications-panel";
@@ -75,10 +76,11 @@ export function AppHeader() {
 
           <button
             type="button"
+            aria-label="eduBite home"
             onClick={() => navigate("home")}
-            className="font-display font-extrabold text-[16px] sm:text-[16.5px] tracking-tight shrink-0 bg-gradient-to-r from-[#F6F7FB] from-55% to-teal bg-clip-text text-transparent"
+            className="shrink-0"
           >
-            Edu<span className="text-teal">bite</span>
+            <BrandLogo place="bar" />
           </button>
 
           <TopNav activeView={activeView} onNavigate={navigate} />
