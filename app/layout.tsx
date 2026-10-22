@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Baloo_2, Inter, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { AuthProvider } from "@/lib/auth/auth-provider";
 import { AppClockProvider } from "@/lib/clock/app-clock";
 import { RdmRewardsProvider } from "@/lib/rdm/rdm-rewards-provider";
@@ -9,22 +9,49 @@ import "./globals.css";
 const TABLER_ICONS_HREF =
   "https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css";
 
-const baloo = Baloo_2({
-  subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
+/** Self-hosted — avoids Vercel build failures when fonts.gstatic.com is unreachable. */
+const baloo = localFont({
+  src: [
+    { path: "./fonts/baloo-2-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/baloo-2-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/baloo-2-latin-700-normal.woff2", weight: "700", style: "normal" },
+    { path: "./fonts/baloo-2-latin-800-normal.woff2", weight: "800", style: "normal" },
+  ],
   variable: "--font-baloo",
+  display: "swap",
 });
 
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const inter = localFont({
+  src: [
+    { path: "./fonts/inter-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/inter-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/inter-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/inter-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
   variable: "--font-inter",
+  display: "swap",
 });
 
-const jetbrains = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
+const jetbrains = localFont({
+  src: [
+    {
+      path: "./fonts/jetbrains-mono-latin-500-normal.woff2",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "./fonts/jetbrains-mono-latin-600-normal.woff2",
+      weight: "600",
+      style: "normal",
+    },
+    {
+      path: "./fonts/jetbrains-mono-latin-700-normal.woff2",
+      weight: "700",
+      style: "normal",
+    },
+  ],
   variable: "--font-jetbrains",
+  display: "swap",
 });
 
 export const metadata: Metadata = {

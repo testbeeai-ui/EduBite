@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { safeRelativePath } from "@/lib/auth/safe-relative-path";
 
 /**
  * Exchange Google OAuth PKCE code and set session cookies.
@@ -12,8 +13,8 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   // Prefer explicit next, else home. Do not rely on query in redirectTo allowlist.
-  const next = url.searchParams.get("next") ?? "/";
-  const finish = new URL(next.startsWith("/") ? next : "/", url.origin);
+  const next = safeRelativePath(url.searchParams.get("next"));
+  const finish = new URL(next, url.origin);
   finish.search = "";
   finish.hash = "";
 

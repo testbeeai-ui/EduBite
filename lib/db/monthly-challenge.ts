@@ -1,7 +1,6 @@
 import {
   buildChallengeProgress,
   getChallengeMonthMeta,
-  getMonthlyChallengeEntryStakeRdm,
   MONTHLY_CHALLENGE_STREAK_REQUIRED,
   MONTHLY_CHALLENGE_WINNER_SLOTS,
 } from "@/lib/challenge/monthly";
@@ -140,19 +139,71 @@ type EntryRow = {
   is_winner: boolean;
 };
 
-function displayNameFromAuthUser(user: {
-  email?: string | null;
-  user_metadata?: Record<string, unknown> | null;
-}): string {
-  const meta = user.user_metadata ?? {};
-  const full =
-    (typeof meta.full_name === "string" && meta.full_name.trim()) ||
-    (typeof meta.name === "string" && meta.name.trim()) ||
-    "";
-  if (full) return full.slice(0, 80);
-  const email = user.email?.trim();
-  if (email) return (email.split("@")[0] ?? "Learner").slice(0, 40);
-  return "Learner";
+type ChallengeEnrollmentResult = {
+  alreadyEnrolled: boolean;
+  monthKey: string;
+  stakeRdm: number;
+  state: GameState;
+};
+
+type ChallengeSubmissionResult = {
+  submittedAt: string;
+  state: GameState;
+};
+
+export async function enrollChallengeAtomically(args: {
+  monthKey: string;
+  displayName: string;
+  dateKey?: string;
+}): Promise<ChallengeEnrollmentResult> {
+  const client = await createEdubiteSupabaseServer();
+  const { data, error } = await client.rpc("edubite_enroll_monthly_challenge", {
+    p_month_key: args.monthKey,
+    p_display_name: args.displayName,
+    p_date_key: args.dateKey ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const result = data as ChallengeEnrollmentResult;
+  return {
+    ...result,
+    state: normalizeGameState(result.state),
+  };
+}
+
+export async function submitChallengeAtomically(args: {
+  monthKey: string;
+  answer: string;
+  displayName: string;
+  dateKey?: string;
+}): Promise<ChallengeSubmissionResult> {
+  const client = await createEdubiteSupabaseServer();
+  const { data, error } = await client.rpc("edubite_submit_monthly_challenge", {
+    p_month_key: args.monthKey,
+    p_answer: args.answer,
+    p_display_name: args.displayName,
+    p_date_key: args.dateKey ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const result = data as ChallengeSubmissionResult;
+  return {
+    submittedAt: result.submittedAt,
+    state: normalizeGameState(result.state),
+  };
+}
+
+export async function listChallengeWinners(
+  monthKey: string,
+): Promise<Array<{ display_name: string; submitted_at: string }>> {
+  const client = await createEdubiteSupabaseServer();
+  const { data, error } = await client.rpc(
+    "edubite_monthly_challenge_winners",
+    { p_month_key: monthKey },
+  );
+  if (error) throw new Error(error.message);
+  return (data ?? []) as Array<{
+    display_name: string;
+    submitted_at: string;
+  }>;
 }
 
 /** Lookup enrollment roster row for a user/month (if any). */
@@ -200,137 +251,6 @@ export async function listEnrollmentMonthKeysForUser(
     out.push(key);
   }
   return out.sort();
-}
-
-/**
- * Insert-only claim for a month. Returns true if this caller created the row
- * (won the race). Returns false if already enrolled (unique conflict / exists).
- */
-export async function claimChallengeEnrollment(args: {
-  userId: string;
-  monthKey: string;
-  displayName: string;
-  stakeRdm?: number;
-}): Promise<"claimed" | "exists" | "error"> {
-  if (!/^\d{4}-\d{2}$/.test(args.monthKey)) return "error";
-  const existing = await getChallengeEnrollment(args.userId, args.monthKey);
-  if (existing) return "exists";
-
-  const client = await createEdubiteSupabaseServer();
-  const stake =
-    typeof args.stakeRdm === "number"
-      ? Math.max(0, Math.floor(args.stakeRdm))
-      : getMonthlyChallengeEntryStakeRdm();
-
-  const { error } = await client.from(ENROLLMENTS_TABLE).insert({
-    user_id: args.userId,
-    month_key: args.monthKey,
-    display_name: args.displayName.slice(0, 80) || "Learner",
-    stake_rdm: stake,
-    enrolled_at: new Date().toISOString(),
-  });
-
-  if (!error) return "claimed";
-  // Unique violation — concurrent enroll won.
-  if (error.code === "23505") return "exists";
-  console.error("[challenge] claim enrollment", error);
-  return "error";
-}
-
-/** Persist enrollment row (idempotent). Call after local enroll succeeds. */
-export async function upsertChallengeEnrollment(args: {
-  userId: string;
-  monthKey: string;
-  displayName: string;
-  stakeRdm?: number;
-  /** When true (default), refresh name/stake. When false, insert-only. */
-  overwrite?: boolean;
-}): Promise<void> {
-  if (!/^\d{4}-\d{2}$/.test(args.monthKey)) return;
-  const client = await createEdubiteSupabaseServer();
-  const stake =
-    typeof args.stakeRdm === "number"
-      ? Math.max(0, Math.floor(args.stakeRdm))
-      : getMonthlyChallengeEntryStakeRdm();
-
-  const { error } = await client.from(ENROLLMENTS_TABLE).upsert(
-    {
-      user_id: args.userId,
-      month_key: args.monthKey,
-      stake_rdm: stake,
-      display_name: args.displayName.slice(0, 80) || "Learner",
-    },
-    {
-      onConflict: "user_id,month_key",
-      ignoreDuplicates: args.overwrite === false,
-    },
-  );
-  if (error) {
-    console.error("[challenge] upsert enrollment", error);
-  }
-}
-
-export async function recordEnrollmentFromUser(user: {
-  id: string;
-  email?: string | null;
-  user_metadata?: Record<string, unknown> | null;
-}, monthKey: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  try {
-    await upsertChallengeEnrollment({
-      userId: user.id,
-      monthKey,
-      displayName: displayNameFromAuthUser(user),
-      stakeRdm: getMonthlyChallengeEntryStakeRdm(),
-    });
-    return { ok: true };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to record enrollment",
-    };
-  }
-}
-
-/** Backfill enrollments from game_state payloads for a month (admin). */
-export async function backfillEnrollmentsFromGameState(
-  monthKey: string,
-): Promise<number> {
-  const client = await createEdubiteSupabaseServer();
-  const { data, error } = await client
-    .from("edubite_game_state")
-    .select("user_id, payload")
-    .filter("payload->>challengeEnrolledMonthKey", "eq", monthKey);
-
-  if (error) {
-    console.error("[challenge] backfill scan", error);
-    return 0;
-  }
-
-  let written = 0;
-  for (const row of data ?? []) {
-    const userId = row.user_id as string;
-    const name = "Learner";
-    try {
-      const state = normalizeGameState(row.payload as unknown);
-      // no name in game state — keep default
-      void state;
-    } catch {
-      /* ignore */
-    }
-    const { error: upsertError } = await client
-      .from(ENROLLMENTS_TABLE)
-      .upsert(
-        {
-          user_id: userId,
-          month_key: monthKey,
-          stake_rdm: getMonthlyChallengeEntryStakeRdm(),
-          display_name: name,
-        },
-        { onConflict: "user_id,month_key", ignoreDuplicates: true },
-      );
-    if (!upsertError) written += 1;
-  }
-  return written;
 }
 
 function asOfDateForMonth(monthKey: string, preferredAsOf?: string): string {

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { getChallengeMonthMeta } from "@/lib/challenge/monthly";
 import {
-  backfillEnrollmentsFromGameState,
   declareWinnersForMonth,
   listChallengeAdminBoard,
   patchChallengeEntry,
@@ -26,11 +25,6 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const monthKey = resolveMonthKey(searchParams.get("monthKey"));
     const asOfDate = searchParams.get("dateKey");
-    const backfill = searchParams.get("backfill") === "1";
-
-    if (backfill) {
-      await backfillEnrollmentsFromGameState(monthKey);
-    }
 
     const board = await listChallengeAdminBoard(
       monthKey,
@@ -55,7 +49,6 @@ export async function GET(request: Request) {
  * - { action: "verify", entryId, verifiedCorrect }
  * - { action: "winner", entryId, isWinner }
  * - { action: "declare_winners", monthKey } — first 5 verified by submit time
- * - { action: "backfill", monthKey }
  */
 export async function PATCH(request: Request) {
   try {
@@ -77,17 +70,6 @@ export async function PATCH(request: Request) {
     }
 
     const action = String((body as { action: unknown }).action);
-
-    if (action === "backfill") {
-      const rawMonth =
-        typeof (body as { monthKey?: unknown }).monthKey === "string"
-          ? String((body as { monthKey?: unknown }).monthKey)
-          : null;
-      const monthKey = resolveMonthKey(rawMonth);
-      const written = await backfillEnrollmentsFromGameState(monthKey);
-      const board = await listChallengeAdminBoard(monthKey);
-      return NextResponse.json({ ok: true, written, ...board });
-    }
 
     if (action === "declare_winners") {
       const rawMonth =

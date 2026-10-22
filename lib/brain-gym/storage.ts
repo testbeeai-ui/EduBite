@@ -401,13 +401,16 @@ export function applySessionResult(
     },
   };
 
-  // RDM: base + win bonus + daily bonus (amounts from admin RDM table)
+  // RDM: score-based (no free min_base when score is 0); amounts from admin table
   const minBase = getLiveRdmAmount("brain_gym.min_base");
   const divisor = Math.max(1, getLiveRdmAmount("brain_gym.score_divisor"));
   const winBonus = getLiveRdmAmount("brain_gym.win_bonus");
   const dailyBonus = getLiveRdmAmount("brain_gym.daily_win_bonus");
   const cap = getLiveRdmAmount("brain_gym.session_cap");
-  let rdmGain = Math.max(minBase, Math.floor(score / divisor));
+  let rdmGain = 0;
+  if (score > 0) {
+    rdmGain = Math.max(minBase, Math.floor(score / divisor));
+  }
   if (result.won) rdmGain += winBonus;
   if (isDaily && result.won) rdmGain += dailyBonus;
   rdmGain = Math.min(cap, rdmGain);

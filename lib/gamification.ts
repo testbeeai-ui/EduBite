@@ -247,7 +247,53 @@ export function effectiveJourneyJoinDate(
   return qaJoin ?? asOfDateKey;
 }
 
-/** Criteria for a calendar date — today live, past from durable date logs only. */
+/**
+ * Legacy `history` is one snapshot per active-day rollover (no date keys).
+ * Positional calendar indexing is safe only when history length equals the
+ * number of calendar days from join through yesterday — i.e. no skipped days.
+ */
+function legacyHistoryCoversCalendar(
+  state: Pick<GameState, "history" | "joinedDate">,
+  asOfDateKey: string,
+): boolean {
+  const joinDate = effectiveJourneyJoinDate(state, asOfDateKey);
+  const daysSinceJoin = daysBetween(joinDate, asOfDateKey);
+  return daysSinceJoin > 0 && state.history.length === daysSinceJoin;
+}
+
+/**
+ * One-time-style backfill: when legacy history is gap-free, copy missing
+ * dayCriteriaLog entries so durable per-date logs take over for cloud/UI.
+ * Never invents days across skips (Sunday bug).
+ */
+export function repairDayCriteriaLogFromHistory(
+  state: GameState,
+  asOfDateKey: string = todayKey(),
+): GameState {
+  if (!legacyHistoryCoversCalendar(state, asOfDateKey)) return state;
+
+  const today = asOfDateKey;
+  const joinDate = effectiveJourneyJoinDate(state, asOfDateKey);
+  const daysSinceJoin = daysBetween(joinDate, today);
+  let changed = false;
+  const dayCriteriaLog: GameState["dayCriteriaLog"] = {
+    ...(state.dayCriteriaLog ?? {}),
+  };
+
+  for (let daysBefore = 1; daysBefore <= daysSinceJoin; daysBefore++) {
+    const dateKey = addDaysToKey(today, -daysBefore);
+    if (dateKey < joinDate) continue;
+    if (dayCriteriaLog[dateKey]) continue;
+    const entry = state.history[state.history.length - daysBefore];
+    if (!entry) continue;
+    dayCriteriaLog[dateKey] = { ...entry };
+    changed = true;
+  }
+
+  return changed ? { ...state, dayCriteriaLog } : state;
+}
+
+/** Criteria for a calendar date — today live, past from durable date logs. */
 export function criteriaForDate(
   state: GameState,
   dateKey: string,
@@ -280,10 +326,20 @@ export function criteriaForDate(
     });
   }
 
-  // No log for this date → incomplete. Never fall back to state.history:
-  // that array is one entry per active-day rollover (no date keys, no gap
-  // padding), so a calendar-offset index paints skipped days (often Sunday)
-  // with the previous active day's completions.
+  if (dateKey > today) return emptyDayCriteria();
+
+  const joinDate = effectiveJourneyJoinDate(state, asOfDateKey);
+  if (dateKey < joinDate) return emptyDayCriteria();
+
+  // Gap-free legacy history only — skipped calendar days stay empty.
+  if (legacyHistoryCoversCalendar(state, asOfDateKey)) {
+    const daysBeforeToday = daysBetween(dateKey, today);
+    const historyIndex = state.history.length - daysBeforeToday;
+    if (historyIndex >= 0 && historyIndex < state.history.length) {
+      return state.history[historyIndex]!;
+    }
+  }
+
   return emptyDayCriteria();
 }
 

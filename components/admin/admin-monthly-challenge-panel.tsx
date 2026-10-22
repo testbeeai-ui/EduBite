@@ -119,13 +119,12 @@ export function AdminMonthlyChallengePanel() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const load = useCallback(
-    async (opts?: { backfill?: boolean }) => {
+    async () => {
       setLoading(true);
       setError(null);
       try {
         const qs = new URLSearchParams({ monthKey });
         qs.set("dateKey", clockToday || todayKey());
-        if (opts?.backfill) qs.set("backfill", "1");
         const res = await fetch(`/api/admin/challenge?${qs}`, {
           credentials: "include",
         });
@@ -272,19 +271,6 @@ export function AdminMonthlyChallengePanel() {
             onClick={() => void load()}
           >
             Refresh
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={loading || busyId !== null}
-            onClick={() =>
-              void patch(
-                { action: "backfill", monthKey },
-                "Synced enrollments from game progress",
-              )
-            }
-          >
-            Sync enrollments
           </Button>
         </div>
       </div>

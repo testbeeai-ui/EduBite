@@ -2,6 +2,8 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
+import { LegalLinks } from "@/components/legal/legal-links";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { NAV_ITEMS } from "@/data/config";
 import { NavEmoji } from "@/components/layout/top-nav";
 import { useAuth } from "@/lib/auth/auth-provider";
@@ -71,6 +73,9 @@ export function BurgerPanel({
             exit={{ x: -24, opacity: 0 }}
             transition={{ type: "spring", stiffness: 380, damping: 34 }}
           >
+            <div className="px-4 pt-4">
+              <BrandLogo place="menu" />
+            </div>
             <div className="flex items-center justify-between gap-3 px-4 py-4 border-b border-[var(--line)]">
               <div
                 onClick={() => {
@@ -237,6 +242,9 @@ export function BurgerPanel({
               >
                 {signedIn ? "Sign out" : "Sign in"}
               </button>
+              <div className="px-3 py-2" onClick={onClose}>
+                <LegalLinks />
+              </div>
             </div>
           </motion.aside>
         </>

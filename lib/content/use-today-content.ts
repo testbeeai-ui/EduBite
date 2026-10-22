@@ -6,13 +6,14 @@ import {
   DAILY_DOSE_QUESTIONS_12,
   FUNBRAIN_POOL,
 } from "@/data/questions";
+import { useAppClock } from "@/lib/clock/app-clock";
 import {
   FUNBRAIN_QUESTIONS_PER_DAY,
   ensureFunBrainQuestionCount,
   stripFunBrainBankLabel,
 } from "@/lib/content/schedule";
 import type { Question } from "@/lib/types";
-import { todayKey } from "@/lib/utils";
+import { todayKey as fallbackTodayKey } from "@/lib/utils";
 
 function mapStaticFunBrain(): Question[] {
   return FUNBRAIN_POOL.map((q) => ({
@@ -125,17 +126,24 @@ function loadTodayContent(dateKey: string): Promise<TodayContent> {
 }
 
 export function useTodayContent(): TodayContent {
-  const dateKey = todayKey();
+  // Subscribe to App Clock so midnight / Date-traveler swaps drop yesterday's pack.
+  const { todayKey: clockToday, ready } = useAppClock();
+  const dateKey = ready ? clockToday : fallbackTodayKey();
   const [state, setState] = useState<TodayContent>(() => {
     if (cachedToday && cachedToday.dateKey === dateKey) return cachedToday;
     return emptyLoading(dateKey);
   });
 
   useEffect(() => {
+    if (!ready) return;
     let cancelled = false;
     if (cachedToday && !cachedToday.loading && cachedToday.dateKey === dateKey) {
       setState(cachedToday);
       return;
+    }
+    // Drop stale in-memory pack when the calendar day changes.
+    if (cachedToday && cachedToday.dateKey !== dateKey) {
+      cachedToday = null;
     }
     setState(emptyLoading(dateKey));
     void loadTodayContent(dateKey).then((next) => {
@@ -144,7 +152,7 @@ export function useTodayContent(): TodayContent {
     return () => {
       cancelled = true;
     };
-  }, [dateKey]);
+  }, [dateKey, ready]);
 
   return state;
 }

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
+import { LegalLinks } from "@/components/legal/legal-links";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/auth-provider";
 
@@ -74,9 +76,7 @@ export function LoginPage() {
         style={{ zIndex: 1 }}
       >
         <div className="flex items-center justify-between">
-          <div className="text-3xl" aria-hidden>
-            🔐
-          </div>
+          <BrandLogo place="login" />
           <button
             type="button"
             aria-label="Close login"
@@ -87,13 +87,9 @@ export function LoginPage() {
           </button>
         </div>
 
-        <div className="mt-3 font-mono text-[11px] font-semibold uppercase tracking-wider text-amber-400">
-          EDUBITE · SAME ACCOUNT AS EDUBLAST
-        </div>
-
         <h1
           id="edubite-login-title"
-          className="mt-1 font-display text-xl font-bold text-white"
+          className="mt-4 font-display text-xl font-bold text-white"
         >
           Sign in to continue
         </h1>
@@ -133,6 +129,7 @@ export function LoginPage() {
             Not now
           </Button>
         </div>
+        <LegalLinks tone="on-dark" className="mt-4 justify-center" />
       </div>
     </div>,
     document.body,

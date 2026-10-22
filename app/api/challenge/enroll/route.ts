@@ -1,26 +1,14 @@
 import { NextResponse } from "next/server";
+import { isAdminEmail } from "@/lib/admin/allowlist";
 import { allowProgressWrite } from "@/lib/api/rate-limit";
 import { getRequestUser } from "@/lib/auth/server";
 import {
   getChallengeMonthMeta,
-  getMonthlyChallengeEntryStakeRdm,
-  getMonthlyChallengeTargetRdm,
-  isEnrolledForChallengeMonth,
   isInEntryWindow,
-  withChallengeEnrollment,
 } from "@/lib/challenge/monthly";
 import { isValidDateKey } from "@/lib/clock/override-store";
-import {
-  claimChallengeEnrollment,
-  getChallengeEnrollment,
-  recordEnrollmentFromUser,
-} from "@/lib/db/monthly-challenge";
-import { createInitialState } from "@/lib/gamification";
-import {
-  readNormalizedGameState,
-  writeNormalizedGameState,
-} from "@/lib/db/supabase-progress";
-import { daysBetween, realTodayKey } from "@/lib/utils";
+import { enrollChallengeAtomically } from "@/lib/db/monthly-challenge";
+import { realTodayKey } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -44,11 +32,14 @@ function displayNameFromAuthUser(user: {
  * Resolve the effective "today" for entry-window checks.
  * Clients may send AppClock override dateKey so admin QA matches the UI.
  */
-function resolveEnrollDateKey(bodyDateKey: string | undefined): string {
-  const real = realTodayKey();
-  if (!bodyDateKey || !isValidDateKey(bodyDateKey)) return real;
-  if (Math.abs(daysBetween(real, bodyDateKey)) > 120) return real;
-  return bodyDateKey;
+function resolveEnrollDateKey(
+  bodyDateKey: string | undefined,
+  admin: boolean,
+): string {
+  if (admin && bodyDateKey && isValidDateKey(bodyDateKey)) {
+    return bodyDateKey;
+  }
+  return realTodayKey();
 }
 
 /**
@@ -83,7 +74,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const dateKey = resolveEnrollDateKey(body.dateKey);
+    const admin = isAdminEmail(user.email);
+    const dateKey = resolveEnrollDateKey(body.dateKey, admin);
     const meta = getChallengeMonthMeta(dateKey);
     const monthKey =
       body.monthKey && /^\d{4}-\d{2}$/.test(body.monthKey)
@@ -114,167 +106,36 @@ export async function POST(request: Request) {
       );
     }
 
-    const stake = getMonthlyChallengeEntryStakeRdm();
-    const unlock = getMonthlyChallengeTargetRdm();
-    const existing = await readNormalizedGameState(user.id);
-    const base = existing ?? {
-      ...createInitialState(),
-      signedIn: true,
-    };
-
-    if (
-      isEnrolledForChallengeMonth(
-        monthKey,
-        base.challengeEnrolledMonthKey,
-        base.challengeEnrolledMonths,
-      )
-    ) {
-      await recordEnrollmentFromUser(user, monthKey);
-      const synced = {
-        ...base,
-        ...withChallengeEnrollment(base, monthKey),
-        signedIn: true,
-      };
-      return NextResponse.json({
-        ok: true,
-        alreadyEnrolled: true,
-        monthKey,
-        stakeRdm: stake,
-        rdm: synced.rdm,
-        challengeEnrolledMonthKey: monthKey,
-        challengeEnrolledMonths: synced.challengeEnrolledMonths,
-        state: synced,
-        message: "You're already in this month's challenge. Good luck!",
-      });
-    }
-
-    const roster = await getChallengeEnrollment(user.id, monthKey);
-    if (roster) {
-      // Roster paid — restore access. Never re-charge if below unlock
-      // (typical after stake: ~2k RDM left).
-      const nextState = await writeNormalizedGameState(user.id, {
-        ...base,
-        ...withChallengeEnrollment(base, monthKey),
-        signedIn: true,
-      });
-      return NextResponse.json({
-        ok: true,
-        alreadyEnrolled: true,
-        repaired: true,
-        monthKey,
-        stakeRdm: stake,
-        rdm: nextState.rdm,
-        challengeEnrolledMonthKey: monthKey,
-        challengeEnrolledMonths: nextState.challengeEnrolledMonths,
-        state: nextState,
-        message: "Welcome back — your Monthly Challenge entry is restored.",
-      });
-    }
-
-    if (base.rdm < unlock) {
-      return NextResponse.json(
-        {
-          error: `Need ${unlock} RDM to unlock Monthly Challenge (you have ${base.rdm}).`,
-          code: "locked_rdm",
-          rdm: base.rdm,
-          unlockRdm: unlock,
-          stakeRdm: stake,
-        },
-        { status: 403 },
-      );
-    }
-
-    if (base.rdm < stake) {
-      return NextResponse.json(
-        {
-          error: `Not enough RDM to enter (you have ${base.rdm}).`,
-          code: "insufficient_stake",
-          rdm: base.rdm,
-          stakeRdm: stake,
-        },
-        { status: 403 },
-      );
-    }
-
-    const claim = await claimChallengeEnrollment({
-      userId: user.id,
+    const result = await enrollChallengeAtomically({
       monthKey,
       displayName: displayNameFromAuthUser(user),
-      stakeRdm: stake,
+      dateKey: admin ? dateKey : undefined,
     });
-
-    if (claim === "error") {
-      return NextResponse.json(
-        { error: "Could not reserve challenge entry. Try again." },
-        { status: 500 },
-      );
-    }
-
-    if (claim === "exists") {
-      let latest = (await readNormalizedGameState(user.id)) ?? base;
-      for (let i = 0; i < 6; i += 1) {
-        if (
-          isEnrolledForChallengeMonth(
-            monthKey,
-            latest.challengeEnrolledMonthKey,
-            latest.challengeEnrolledMonths,
-          )
-        ) {
-          return NextResponse.json({
-            ok: true,
-            alreadyEnrolled: true,
-            monthKey,
-            stakeRdm: stake,
-            rdm: latest.rdm,
-            challengeEnrolledMonthKey: monthKey,
-            challengeEnrolledMonths: latest.challengeEnrolledMonths,
-            state: latest,
-            message: "You're already in this month's challenge. Good luck!",
-          });
-        }
-        await new Promise((resolve) => setTimeout(resolve, 40));
-        latest = (await readNormalizedGameState(user.id)) ?? latest;
-      }
-
-      const nextState = await writeNormalizedGameState(user.id, {
-        ...latest,
-        ...withChallengeEnrollment(latest, monthKey),
-        signedIn: true,
-      });
-      return NextResponse.json({
-        ok: true,
-        alreadyEnrolled: true,
-        monthKey,
-        stakeRdm: stake,
-        rdm: nextState.rdm,
-        challengeEnrolledMonthKey: monthKey,
-        challengeEnrolledMonths: nextState.challengeEnrolledMonths,
-        state: nextState,
-        message: "Welcome back — your Monthly Challenge entry is restored.",
-      });
-    }
-
-    const nextRdm = base.rdm - stake;
-    const nextState = await writeNormalizedGameState(user.id, {
-      ...base,
-      rdm: nextRdm,
-      ...withChallengeEnrollment(base, monthKey),
-      signedIn: true,
-    });
+    const state = result.state;
 
     return NextResponse.json({
       ok: true,
-      alreadyEnrolled: false,
-      monthKey,
-      stakeRdm: stake,
-      rdm: nextState.rdm,
-      challengeEnrolledMonthKey: nextState.challengeEnrolledMonthKey,
-      challengeEnrolledMonths: nextState.challengeEnrolledMonths,
-      state: nextState,
-      message: "Thank you! You're in this month's challenge. Good luck!",
+      alreadyEnrolled: result.alreadyEnrolled,
+      monthKey: result.monthKey,
+      stakeRdm: result.stakeRdm,
+      rdm: state.rdm,
+      challengeEnrolledMonthKey: state.challengeEnrolledMonthKey,
+      challengeEnrolledMonths: state.challengeEnrolledMonths,
+      state,
+      message: result.alreadyEnrolled
+        ? "You're already in this month's challenge. Good luck!"
+        : "Thank you! You're in this month's challenge. Good luck!",
     });
   } catch (err) {
     console.error("[api/challenge/enroll POST]", err);
+    const message = err instanceof Error ? err.message : "Server error";
+    if (
+      message.includes("insufficient RDM") ||
+      message.includes("entry window") ||
+      message.includes("invalid challenge month")
+    ) {
+      return NextResponse.json({ error: message }, { status: 403 });
+    }
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

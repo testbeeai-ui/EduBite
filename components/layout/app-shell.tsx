@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { AppHeader } from "@/components/layout/app-header";
-import { FlashToast } from "@/components/layout/flash-toast";
 import { ModalHost } from "@/components/modals/modal-host";
 import { HomeView } from "@/components/views/home-view";
 import { PageSkeleton } from "@/components/ui/skeleton";
@@ -120,7 +119,6 @@ export function AppShell() {
         )}
       </main>
       <ModalHost />
-      <FlashToast />
     </>
   );
 }

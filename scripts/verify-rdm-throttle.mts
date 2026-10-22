@@ -32,7 +32,7 @@ function bgAward(score: number, won: boolean, isDaily: boolean) {
   const winBonus = getLiveRdmAmount("brain_gym.win_bonus");
   const dailyBonus = getLiveRdmAmount("brain_gym.daily_win_bonus");
   const cap = getLiveRdmAmount("brain_gym.session_cap");
-  let rdmGain = Math.max(minBase, Math.floor(score / divisor));
+  let rdmGain = score > 0 ? Math.max(minBase, Math.floor(score / divisor)) : 0;
   if (won) rdmGain += winBonus;
   if (isDaily && won) rdmGain += dailyBonus;
   return Math.min(cap, rdmGain);
