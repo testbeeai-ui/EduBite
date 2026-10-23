@@ -1,5 +1,9 @@
 import { STORAGE_KEY } from "@/data/config";
 import { normalizeGameState } from "@/lib/db/normalize";
+import {
+  beginProgressWrite,
+  endProgressWrite,
+} from "@/lib/persistence/progress-write-gate";
 import type { SaveResult } from "@/lib/persistence/save-queue";
 import type { GameState } from "@/lib/types";
 
@@ -69,6 +73,9 @@ export async function saveGameState(
   state: GameState,
 ): Promise<SaveResult> {
   if (!userId) return { ok: false, error: "Not signed in" };
+  if (!beginProgressWrite()) {
+    return { ok: false, error: "Account deletion in progress" };
+  }
 
   try {
     const res = await fetch("/api/progress/game", {
@@ -92,6 +99,8 @@ export async function saveGameState(
       err instanceof Error ? err.message : "game save network error";
     console.warn("saveGameState failed:", error);
     return { ok: false, error };
+  } finally {
+    endProgressWrite();
   }
 }
 

@@ -47,6 +47,10 @@ import { useAuth } from "@/lib/auth/auth-provider";
 import { storePendingView, readPendingView, clearPendingView } from "@/lib/auth/pending-action";
 import { useAppClock } from "@/lib/clock/app-clock";
 import { toPersistableGameState } from "@/lib/persistence/persistable-game-state";
+import {
+  areProgressWritesSuspended,
+  resumeProgressWrites,
+} from "@/lib/persistence/progress-write-gate";
 import { createSaveQueue } from "@/lib/persistence/save-queue";
 import { loadPuzzleProgress } from "@/lib/puzzles/storage";
 import { normalizeGameState } from "@/lib/db/normalize";
@@ -853,6 +857,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         return storageAdapter.save(userId, next);
       },
       () => userIdRef.current,
+      { isSuspended: areProgressWritesSuspended },
     ),
   );
 
@@ -897,6 +902,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       loadedUserIdRef.current = null;
       prevFullDayRef.current = false;
       saveQueueRef.current.invalidate();
+      // userIdRef is already cleared, so a resumed queue cannot flush the deleted account.
+      resumeProgressWrites();
       dispatch({ type: "HYDRATE", payload: createInitialState() });
       setHydrated(true);
       setModal({ pledge: null, reel: null });
